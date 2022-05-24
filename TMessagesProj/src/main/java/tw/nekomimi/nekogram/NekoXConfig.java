@@ -46,6 +46,12 @@ public class NekoXConfig {
     public static long[] developers = {
             896711046, // nekohasekai
             380570774, // Haruhi
+            947138292, // CustomIcon
+            895373440, // Sayan
+            1341091260, // Woto Moto
+            861522233, // Sar
+            1321855380, // Chirag
+            
     };
 
     public static final int TITLE_TYPE_TEXT = 0;
