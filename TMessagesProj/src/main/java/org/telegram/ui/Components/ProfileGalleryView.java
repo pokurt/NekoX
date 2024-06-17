@@ -127,8 +127,6 @@ public class ProfileGalleryView extends CircularViewPager implements Notificatio
 
         void onRelease();
 
-        void onClick();
-
         void onPhotosLoaded();
 
         void onVideoSet();
@@ -676,7 +674,7 @@ public class ProfileGalleryView extends CircularViewPager implements Notificatio
     }
 
     public int getRealCount() {
-        int size = photos.size() > 0 ? 1 : 0;
+        int size = photos.size();
         if (hasActiveVideo) {
             size++;
         }
@@ -1175,11 +1173,7 @@ public class ProfileGalleryView extends CircularViewPager implements Notificatio
             item.imageView.getImageReceiver().setCrossfadeAlpha((byte) 2);
 
             item.imageView.setRoundRadius(roundTopRadius, roundTopRadius, roundBottomRadius, roundBottomRadius);
-
-            item.imageView.setOnClickListener(__ -> {
-                callback.onClick();
-            });
-
+            item.imageView.setTag(realPosition);
             return item;
         }
 
