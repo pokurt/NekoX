@@ -121,7 +121,7 @@ import kotlin.Unit;
 import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 @SuppressWarnings("unchecked")
 public class SharedMediaLayout extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
@@ -4961,7 +4961,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                                 if (which == 0) {
                                     openUrl(urlFinal);
                                 } else {
-                                    ProxyUtil.showQrDialog(profileActivity.getParentActivity(), urlFinal);
+                                    QrUtil.showQrDialog(profileActivity.getParentActivity(), urlFinal);
                                 }
                             } else if (which == 1) {
                                 String url1 = urlFinal;

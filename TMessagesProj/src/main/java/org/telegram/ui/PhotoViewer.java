@@ -267,7 +267,7 @@ import tw.nekomimi.nekogram.transtale.TranslateDb;
 import tw.nekomimi.nekogram.transtale.Translator;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 @SuppressLint("WrongConstant")
 @SuppressWarnings("unchecked")
@@ -4350,7 +4350,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                             showDownloadAlert();
                             return;
                         }
-                        ProxyUtil.tryReadQR(parentActivity, bitmap);
+                        QrUtil.tryReadQR(parentActivity, bitmap);
                     } catch (Exception ignored) {
                         AlertUtil.showToast(LocaleController.getString("NoQrFound", R.string.NoQrFound));
                     }

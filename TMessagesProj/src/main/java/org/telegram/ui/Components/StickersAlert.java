@@ -105,7 +105,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 public class StickersAlert extends BottomSheet implements NotificationCenter.NotificationCenterDelegate {
 
@@ -1052,11 +1052,11 @@ public class StickersAlert extends BottomSheet implements NotificationCenter.Not
                 if (child instanceof StickerEmojiCell) {
                     Bitmap bitmap = ((StickerEmojiCell) child).getImageView().getBitmap();
                     if (bitmap == null) continue;
-                    ProxyUtil.showQrDialog(getContext(), stickersUrl, imageSize -> Bitmap.createScaledBitmap(bitmap,imageSize,imageSize, true));
+                    QrUtil.showQrDialog(getContext(), stickersUrl, imageSize -> Bitmap.createScaledBitmap(bitmap,imageSize,imageSize, true));
                     return;
                 }
             }
-            ProxyUtil.showQrDialog(getContext(), stickersUrl);
+            QrUtil.showQrDialog(getContext(), stickersUrl);
         } else if (id == menu_archive) {
             dismiss();
             MediaDataController.getInstance(currentAccount).toggleStickerSet(parentActivity, stickerSet, 1, parentFragment, false, true);

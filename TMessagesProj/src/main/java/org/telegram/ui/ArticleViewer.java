@@ -187,7 +187,7 @@ import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.parts.ArticleTransKt;
 import tw.nekomimi.nekogram.transtale.TranslateDb;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 public class ArticleViewer implements NotificationCenter.NotificationCenterDelegate {
 
@@ -1267,7 +1267,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                         if (which == 0 ) {
                             Browser.openUrl(parentActivity, urlFinal);
                         } else {
-                            ProxyUtil.showQrDialog(parentActivity, urlFinal);
+                            QrUtil.showQrDialog(parentActivity, urlFinal);
                         }
                     } else if (which == 1) {
                         String url = urlFinal;

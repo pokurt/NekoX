@@ -343,7 +343,7 @@ import tw.nekomimi.nekogram.settings.NekoSettingsActivity;
 import tw.nekomimi.nekogram.transtale.Translator;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.PGPUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 import tw.nekomimi.nekogram.utils.TelegramUtil;
 
 @SuppressWarnings("unchecked")
@@ -26260,18 +26260,17 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             showDialog(builder.create());
                         }
                     } else if (locFile.getName().toLowerCase().endsWith(".nekox.json")) {
-                        //TODO wtf
-
-                        File finalLocFile1 = locFile;
-                        AlertUtil.showConfirm(getParentActivity(),
-                                LocaleController.getString("ImportProxyList", R.string.ImportProxyList),
-                                R.drawable.baseline_security_24, LocaleController.getString("Import", R.string.Import),
-                                false, () -> {
-                                    String status = ProxyListActivity.processProxyListFile(getParentActivity(), finalLocFile1);
-                                    if (!StrUtil.isBlank(status)) {
-                                        presentFragment(new ProxyListActivity(status));
-                                    }
-                                });
+                        Toast.makeText(getContext(), "Not Supportred now", Toast.LENGTH_SHORT).show();
+//                        File finalLocFile1 = locFile;
+//                        AlertUtil.showConfirm(getParentActivity(),
+//                                LocaleController.getString("ImportProxyList", R.string.ImportProxyList),
+//                                R.drawable.baseline_security_24, LocaleController.getString("Import", R.string.Import),
+//                                false, () -> {
+//                                    String status = ProxyListActivity.processProxyListFile(getParentActivity(), finalLocFile1);
+//                                    if (!StrUtil.isBlank(status)) {
+//                                        presentFragment(new ProxyListActivity(status));
+//                                    }
+//                                });
 
                     } else if (locFile.getName().toLowerCase().endsWith(".nekox-stickers.json")) {
 
@@ -26284,11 +26283,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                                 });
 
                     } else if (locFile.getName().toLowerCase().endsWith(".nekox-settings.json")) {
-
                         File finalLocFile = locFile;
-
                         NekoSettingsActivity.importSettings(getParentActivity(), finalLocFile);
-
                     }
                 }
                 break;
@@ -28302,7 +28298,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                                 }
                             } else if (which == 2) {
                                 // QRCode
-                                ProxyUtil.showQrDialog(getParentActivity(), urlFinal);
+                                QrUtil.showQrDialog(getParentActivity(), urlFinal);
                             }
                             return Unit.INSTANCE;
                         });
@@ -30633,17 +30629,18 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                                 AlertUtil.showToast("FILE_NOT_FOUND");
 
                             } else if (message.getDocumentName().toLowerCase().endsWith(".nekox.json")) {
+                                AlertUtil.showToast("NOT_SUPPORTED_NOW");
 
-                                File finalLocFile = locFile;
-                                AlertUtil.showConfirm(getParentActivity(),
-                                        LocaleController.getString("ImportProxyList", R.string.ImportProxyList),
-                                        R.drawable.baseline_security_24, LocaleController.getString("Import", R.string.Import),
-                                        false, () -> {
-                                            String status = ProxyListActivity.processProxyListFile(getParentActivity(), finalLocFile);
-                                            if (!StrUtil.isBlank(status)) {
-                                                presentFragment(new ProxyListActivity(status));
-                                            }
-                                        });
+//                                File finalLocFile = locFile;
+//                                AlertUtil.showConfirm(getParentActivity(),
+//                                        LocaleController.getString("ImportProxyList", R.string.ImportProxyList),
+//                                        R.drawable.baseline_security_24, LocaleController.getString("Import", R.string.Import),
+//                                        false, () -> {
+//                                            String status = ProxyListActivity.processProxyListFile(getParentActivity(), finalLocFile);
+//                                            if (!StrUtil.isBlank(status)) {
+//                                                presentFragment(new ProxyListActivity(status));
+//                                            }
+//                                        });
 
                             } else if (message.getDocumentName().toLowerCase().endsWith(".nekox-stickers.json")) {
 

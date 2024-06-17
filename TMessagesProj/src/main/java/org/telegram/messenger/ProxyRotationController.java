@@ -83,7 +83,7 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             }
             editor.apply();
 
-            SharedConfig.currentProxy = info;
+            SharedConfig.setCurrentProxy(info);
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyChangedByRotation);
             ConnectionsManager.setProxySettings(true, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);

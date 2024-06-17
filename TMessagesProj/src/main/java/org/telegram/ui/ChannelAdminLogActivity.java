@@ -137,7 +137,7 @@ import kotlin.Unit;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 public class ChannelAdminLogActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
@@ -2508,7 +2508,7 @@ public class ChannelAdminLogActivity extends BaseFragment implements Notificatio
                                                 if (which == 0) {
                                                     Browser.openUrl(getParentActivity(), urlFinal);
                                                 } else {
-                                                    ProxyUtil.showQrDialog(getParentActivity(), urlFinal);
+                                                    QrUtil.showQrDialog(getParentActivity(), urlFinal);
                                                 }
                                             } else if (which == 1) {
                                                 String url1 = urlFinal;

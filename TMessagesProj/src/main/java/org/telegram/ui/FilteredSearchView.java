@@ -81,7 +81,7 @@ import java.util.Locale;
 import kotlin.Unit;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 public class FilteredSearchView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
 
@@ -1103,7 +1103,7 @@ public class FilteredSearchView extends FrameLayout implements NotificationCente
                                     if (which == 0) {
                                         openUrl(urlFinal);
                                     } else {
-                                        ProxyUtil.showQrDialog(parentActivity, urlFinal);
+                                        QrUtil.showQrDialog(parentActivity, urlFinal);
                                     }
                                 } else if (which == 1) {
                                     String url1 = urlFinal;

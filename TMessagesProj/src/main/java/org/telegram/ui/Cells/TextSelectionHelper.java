@@ -68,7 +68,7 @@ import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.transtale.TranslateDb;
 import tw.nekomimi.nekogram.transtale.Translator;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 import static com.google.zxing.common.detector.MathUtils.distance;
 import static org.telegram.ui.ActionBar.FloatingToolbar.STYLE_THEME;
@@ -1362,7 +1362,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
                             return true;
                         }
                         String urlFinal = textS.toString();
-                        Activity activity = ProxyUtil.getOwnerActivity((((View) selectedView).getContext()));
+                        Activity activity = QrUtil.getOwnerActivity((((View) selectedView).getContext()));
                         TranslateDb db = TranslateDb.currentTarget();
                         if (db.contains(urlFinal)) {
                             AlertUtil.showCopyAlert(activity, db.query(urlFinal));
