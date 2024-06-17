@@ -43,7 +43,7 @@ public class FileUploadOperation {
     private static final int initialRequestsSlowNetworkCount = 1;
     private static final int maxUploadingKBytes = 1024 * 2;
     private static final int maxUploadingSlowNetworkKBytes = 32;
-    private static final int maxUploadParts = (int) (FileLoader.MAX_FILE_SIZE / 1024 / 512);
+
     private int maxRequestsCount;
     private int uploadChunkSize = 64 * 1024;
     private boolean slowNetwork;
@@ -69,7 +69,7 @@ public class FileUploadOperation {
     private boolean isBigFile;
     private boolean forceSmallFile;
     private String fileKey;
-    private int estimatedSize;
+    private long estimatedSize;
     private int uploadStartTime;
     private RandomAccessFile stream;
     private boolean started;
@@ -88,7 +88,7 @@ public class FileUploadOperation {
         void didChangedUploadProgress(FileUploadOperation operation, long uploadedSize, long totalSize);
     }
 
-    public FileUploadOperation(int instance, String location, boolean encrypted, int estimated, int type) {
+    public FileUploadOperation(int instance, String location, boolean encrypted, long estimated, int type) {
         currentAccount = instance;
         uploadingFilePath = location;
         isEncrypted = encrypted;
@@ -110,6 +110,7 @@ public class FileUploadOperation {
             return;
         }
         state = 1;
+        AutoDeleteMediaTask.lockFile(uploadingFilePath);
         Utilities.stageQueue.postRunnable(() -> {
             preferences = ApplicationLoader.applicationContext.getSharedPreferences("uploadinfo", Activity.MODE_PRIVATE);
             slowNetwork = ApplicationLoader.isConnectionSlow();
@@ -170,6 +171,7 @@ public class FileUploadOperation {
                 ConnectionsManager.getInstance(currentAccount).cancelRequest(requestTokens.valueAt(a), true);
             }
         });
+        AutoDeleteMediaTask.unlockFile(uploadingFilePath);
         delegate.didFailedUploadingFile(this);
         cleanup();
     }
@@ -193,6 +195,7 @@ public class FileUploadOperation {
         } catch (Exception e) {
             FileLog.e(e);
         }
+        AutoDeleteMediaTask.unlockFile(uploadingFilePath);
     }
 
     protected void checkNewDataAvailable(final long newAvailableSize, final long finalSize) {
@@ -229,12 +232,12 @@ public class FileUploadOperation {
     private void calcTotalPartsCount() {
         if (uploadFirstPartLater) {
             if (isBigFile) {
-                totalPartsCount = 1 + (int) ((totalFileSize - uploadChunkSize) + uploadChunkSize - 1) / uploadChunkSize;
+                totalPartsCount = 1 + (int) (((totalFileSize - uploadChunkSize) + uploadChunkSize - 1) / uploadChunkSize);
             } else {
-                totalPartsCount = 1 + (int) ((totalFileSize - 1024) + uploadChunkSize - 1) / uploadChunkSize;
+                totalPartsCount = 1 + (int) (((totalFileSize - 1024) + uploadChunkSize - 1) / uploadChunkSize);
             }
         } else {
-            totalPartsCount = (int) (totalFileSize + uploadChunkSize - 1) / uploadChunkSize;
+            totalPartsCount = (int) ((totalFileSize + uploadChunkSize - 1) / uploadChunkSize);
         }
     }
 
@@ -256,6 +259,9 @@ public class FileUploadOperation {
             started = true;
             if (stream == null) {
                 File cacheFile = new File(uploadingFilePath);
+//                if (AndroidUtilities.isInternalUri(Uri.fromFile(cacheFile))) {
+//                    throw new FileLog.IgnoreSentException("trying to upload internal file");
+//                }
                 stream = new RandomAccessFile(cacheFile, "r");
                 boolean isInternalFile = false;
                 try {
@@ -279,7 +285,11 @@ public class FileUploadOperation {
                     isBigFile = true;
                 }
 
-                uploadChunkSize = (int) Math.max(slowNetwork ? minUploadChunkSlowNetworkSize : minUploadChunkSize, (totalFileSize + 1024 * maxUploadParts - 1) / (1024 * maxUploadParts));
+                long maxUploadParts = MessagesController.getInstance(currentAccount).uploadMaxFileParts;
+                if (AccountInstance.getInstance(currentAccount).getUserConfig().isPremium() && totalFileSize > FileLoader.DEFAULT_MAX_FILE_SIZE) {
+                    maxUploadParts = MessagesController.getInstance(currentAccount).uploadMaxFilePartsPremium;
+                }
+                uploadChunkSize = (int) Math.max(slowNetwork ? minUploadChunkSlowNetworkSize : minUploadChunkSize, (totalFileSize + 1024L * maxUploadParts - 1) / (1024L * maxUploadParts));
                 if (1024 % uploadChunkSize != 0) {
                     int chunkSize = 64;
                     while (uploadChunkSize > chunkSize) {
@@ -528,7 +538,11 @@ public class FileUploadOperation {
             } else if (currentType == ConnectionsManager.FileTypePhoto) {
                 StatsController.getInstance(currentAccount).incrementSentBytesCount(networkType, StatsController.TYPE_PHOTOS, requestSize);
             } else if (currentType == ConnectionsManager.FileTypeFile) {
-                StatsController.getInstance(currentAccount).incrementSentBytesCount(networkType, StatsController.TYPE_FILES, requestSize);
+                if (uploadingFilePath != null && (uploadingFilePath.toLowerCase().endsWith("mp3") || uploadingFilePath.toLowerCase().endsWith("m4a"))) {
+                    StatsController.getInstance(currentAccount).incrementSentBytesCount(networkType, StatsController.TYPE_MUSIC, requestSize);
+                } else {
+                    StatsController.getInstance(currentAccount).incrementSentBytesCount(networkType, StatsController.TYPE_FILES, requestSize);
+                }
             }
             if (currentRequestIv != null) {
                 freeRequestIvs.add(currentRequestIv);
@@ -583,7 +597,11 @@ public class FileUploadOperation {
                     } else if (currentType == ConnectionsManager.FileTypePhoto) {
                         StatsController.getInstance(currentAccount).incrementSentItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_PHOTOS, 1);
                     } else if (currentType == ConnectionsManager.FileTypeFile) {
-                        StatsController.getInstance(currentAccount).incrementSentItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_FILES, 1);
+                        if (uploadingFilePath != null && (uploadingFilePath.toLowerCase().endsWith("mp3") || uploadingFilePath.toLowerCase().endsWith("m4a"))) {
+                            StatsController.getInstance(currentAccount).incrementSentItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_MUSIC, 1);
+                        } else {
+                            StatsController.getInstance(currentAccount).incrementSentItemsCount(ApplicationLoader.getCurrentNetworkType(), StatsController.TYPE_FILES, 1);
+                        }
                     }
                 } else if (currentUploadRequetsCount < maxRequestsCount) {
                     if (estimatedSize == 0 && !uploadFirstPartLater && !nextPartFirst) {

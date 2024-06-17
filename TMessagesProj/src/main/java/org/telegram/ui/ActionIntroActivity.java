@@ -163,7 +163,7 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
                             imageView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec((int) (height * 0.399f), MeasureSpec.EXACTLY));
                             titleTextView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED));
                             descriptionText.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED));
-                            buttonTextView.measure(MeasureSpec.makeMeasureSpec(width - AndroidUtilities.dp(86), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(42), MeasureSpec.EXACTLY));
+                            buttonTextView.measure(MeasureSpec.makeMeasureSpec(width - AndroidUtilities.dp(72), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(50), MeasureSpec.EXACTLY));
                         }
                         break;
                     }
@@ -198,14 +198,14 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
                         if (width > height) {
                             titleTextView.measure(MeasureSpec.makeMeasureSpec((int) (width * 0.6f), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED));
                             descriptionText.measure(MeasureSpec.makeMeasureSpec((int) (width * 0.6f), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED));
-                            buttonTextView.measure(MeasureSpec.makeMeasureSpec((int) (width * 0.6f), MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(42), MeasureSpec.EXACTLY));
+                            buttonTextView.measure(MeasureSpec.makeMeasureSpec((int) (width * 0.6f), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(42), MeasureSpec.EXACTLY));
                         } else {
                             titleTextView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED));
                             descriptionText.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED));
                             if (currentType == ACTION_TYPE_SET_PASSCODE) {
                                 buttonTextView.measure(MeasureSpec.makeMeasureSpec(width - AndroidUtilities.dp(24 * 2), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(50), MeasureSpec.EXACTLY));
                             } else {
-                                buttonTextView.measure(MeasureSpec.makeMeasureSpec((int) (width * 0.6f), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(42), MeasureSpec.EXACTLY));
+                                buttonTextView.measure(MeasureSpec.makeMeasureSpec(width - AndroidUtilities.dp(72), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(50), MeasureSpec.EXACTLY));
                             }
                         }
                         break;
@@ -387,7 +387,7 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
                             y = (int) (height * 0.493f);
                             descriptionText.layout(0, y, descriptionText.getMeasuredWidth(), y + descriptionText.getMeasuredHeight());
                             x = (width - buttonTextView.getMeasuredWidth()) / 2;
-                            y = (int) (height * 0.71f);
+                            y = (int) (height * 0.853f);
                             buttonTextView.layout(x, y, x + buttonTextView.getMeasuredWidth(), y + buttonTextView.getMeasuredHeight());
                         }
                         break;
@@ -594,7 +594,7 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
                     }
                     cellFlickerDrawable.setParentWidth(getMeasuredWidth());
                     AndroidUtilities.rectTmp.set(0, 0, getMeasuredWidth(), getMeasuredHeight());
-                    cellFlickerDrawable.draw(canvas, AndroidUtilities.rectTmp, AndroidUtilities.dp(4));
+                    cellFlickerDrawable.draw(canvas, AndroidUtilities.rectTmp, AndroidUtilities.dp(4), null);
                     invalidate();
                 }
             }
@@ -605,8 +605,8 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
         buttonTextView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
         buttonTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         buttonTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
-        int buttonRadiusDp = currentType == ACTION_TYPE_SET_PASSCODE || currentType == ACTION_TYPE_CHANGE_PHONE_NUMBER ? 6 : 4;
-        buttonTextView.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(buttonRadiusDp), Theme.getColor(Theme.key_featuredStickers_addButton), Theme.getColor(Theme.key_featuredStickers_addButtonPressed)));
+        int buttonRadiusDp = currentType == ACTION_TYPE_SET_PASSCODE || currentType == ACTION_TYPE_CHANGE_PHONE_NUMBER || currentType == ACTION_TYPE_CHANNEL_CREATE ? 6 : 4;
+        buttonTextView.setBackground(Theme.AdaptiveRipple.filledRect(Theme.key_featuredStickers_addButton, buttonRadiusDp));
         viewGroup.addView(buttonTextView);
         buttonTextView.setOnClickListener(v -> {
             if (getParentActivity() == null) {
@@ -663,7 +663,7 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
                     BottomBuilder builder = new BottomBuilder(getParentActivity());
                     builder.addTitle(LocaleController.getString("PhoneNumberAlert", R.string.PhoneNumberAlert));
                     builder.addItem(LocaleController.getString("Change", R.string.Change),R.drawable.baseline_check_circle_24, i -> {
-                        presentFragment(new ChangePhoneActivity(), true);
+                        presentFragment(new LoginActivity().changePhoneNumber(), true);
                         return Unit.INSTANCE;
                     });
                     builder.addCancelItem();
@@ -687,6 +687,7 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
             case ACTION_TYPE_SET_PASSCODE: {
                 imageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
                 imageView.setAnimation(R.raw.utyan_passcode, 200, 200);
+                imageView.setFocusable(false);
                 imageView.setOnClickListener(v -> {
                     if (!imageView.getAnimatedDrawable().isRunning()) {
                         imageView.getAnimatedDrawable().setCurrentFrame(0, false);
@@ -707,6 +708,7 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
                 titleTextView.setText(LocaleController.getString("PeopleNearby", R.string.PeopleNearby));
                 descriptionText.setText(LocaleController.getString("PeopleNearbyAccessInfo", R.string.PeopleNearbyAccessInfo));
                 buttonTextView.setText(LocaleController.getString("PeopleNearbyAllowAccess", R.string.PeopleNearbyAllowAccess));
+                flickerButton = true;
                 break;
             }
             case ACTION_TYPE_NEARBY_LOCATION_ENABLED: {
@@ -924,7 +926,6 @@ public class ActionIntroActivity extends BaseFragment implements LocationControl
         themeDescriptions.add(new ThemeDescription(desctiptionLines[4], ThemeDescription.FLAG_TEXTCOLOR, null, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
         themeDescriptions.add(new ThemeDescription(desctiptionLines[5], ThemeDescription.FLAG_TEXTCOLOR, null, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
 
-        themeDescriptions.add(new ThemeDescription(null, ThemeDescription.FLAG_TEXTCOLOR, null, null, new Drawable[]{drawable1}, null, Theme.key_changephoneinfo_image));
         themeDescriptions.add(new ThemeDescription(null, ThemeDescription.FLAG_TEXTCOLOR, null, null, new Drawable[]{drawable2}, null, Theme.key_changephoneinfo_image2));
 
         return themeDescriptions;

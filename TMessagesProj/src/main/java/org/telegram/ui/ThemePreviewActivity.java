@@ -75,7 +75,6 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
@@ -368,11 +367,6 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
         isMotion = motion;
     }
 
-    @Override
-    public int getNavigationBarColor() {
-        return super.getNavigationBarColor();
-    }
-
     @SuppressLint("Recycle")
     @Override
     public View createView(Context context) {
@@ -646,7 +640,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                     }
                     showDialog(new ShareAlert(getParentActivity(), null, link, false, link, false) {
                         @Override
-                        protected void onSend(LongSparseArray<TLRPC.Dialog> dids, int count) {
+                        protected void onSend(LongSparseArray<TLRPC.Dialog> dids, int count, TLRPC.TL_forumTopic topic) {
                             if (dids.size() == 1) {
                                 undoView.showWithAction(dids.valueAt(0).id, UndoView.ACTION_SHARE_BACKGROUND, count);
                             } else {
@@ -820,7 +814,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                 if (applyingTheme.info != null && applyingTheme.info.installs_count > 0) {
                     actionBar2.setSubtitle(LocaleController.formatPluralString("ThemeInstallCount", applyingTheme.info.installs_count));
                 } else {
-                    actionBar2.setSubtitle(LocaleController.formatDateOnline(System.currentTimeMillis() / 1000 - 60 * 60));
+                    actionBar2.setSubtitle(LocaleController.formatDateOnline(System.currentTimeMillis() / 1000 - 60 * 60, null));
                 }
             }
         }
@@ -1085,7 +1079,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
 
                         if (!done) {
                             TLRPC.TL_wallPaper wallPaper = (TLRPC.TL_wallPaper) currentWallpaper;
-                            File f = FileLoader.getPathToAttach(wallPaper.document, true);
+                            File f = FileLoader.getInstance(currentAccount).getPathToAttach(wallPaper.document, true);
                             try {
                                 done = AndroidUtilities.copyFile(f, toFile);
                             } catch (Exception e) {
@@ -1152,7 +1146,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                         File f;
                         if (wallpaper.photo != null) {
                             TLRPC.PhotoSize image = FileLoader.getClosestPhotoSizeWithSize(wallpaper.photo.sizes, maxWallpaperSize, true);
-                            f = FileLoader.getPathToAttach(image, true);
+                            f = FileLoader.getInstance(currentAccount).getPathToAttach(image, true);
                         } else {
                             f = ImageLoader.getHttpFilePath(wallpaper.imageUrl, "jpg");
                         }
@@ -1213,7 +1207,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                         MediaController.SearchImage wallPaper = (MediaController.SearchImage) currentWallpaper;
                         if (wallPaper.photo != null) {
                             TLRPC.PhotoSize image = FileLoader.getClosestPhotoSizeWithSize(wallPaper.photo.sizes, maxWallpaperSize, true);
-                            path = FileLoader.getPathToAttach(image, true);
+                            path = FileLoader.getInstance(currentAccount).getPathToAttach(image, true);
                         } else {
                             path = ImageLoader.getHttpFilePath(wallPaper.imageUrl, "jpg");
                         }
@@ -1850,7 +1844,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                                 showDialog(alertDialog);
                                 TextView button = (TextView) alertDialog.getButton(DialogInterface.BUTTON_POSITIVE);
                                 if (button != null) {
-                                    button.setTextColor(Theme.getColor(Theme.key_dialogTextRed2));
+                                    button.setTextColor(Theme.getColor(Theme.key_dialogTextRed));
                                 }
                             }
 
@@ -1881,11 +1875,13 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                                 colorPicker.setMinBrightness(0.05f);
                                 colorPicker.setMaxBrightness(0.8f);
                             }
-                            int colorsCount = accent.accentColor2 != 0 ? 2 : 1;
-                            colorPicker.setType(1, hasChanges(1), 2, colorsCount, false, 0, false);
-                            colorPicker.setColor(accent.accentColor, 0);
-                            if (accent.accentColor2 != 0) {
-                                colorPicker.setColor(accent.accentColor2, 1);
+                            if (accent != null) {
+                                int colorsCount = accent.accentColor2 != 0 ? 2 : 1;
+                                colorPicker.setType(1, hasChanges(1), 2, colorsCount, false, 0, false);
+                                colorPicker.setColor(accent.accentColor, 0);
+                                if (accent.accentColor2 != 0) {
+                                    colorPicker.setColor(accent.accentColor2, 1);
+                                }
                             }
                         } else {
                             patternLayout[a].addView(colorPicker, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER_HORIZONTAL, 0, 0, 0, 48));
@@ -2074,10 +2070,12 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                     editor.putString("lastDayTheme", applyingTheme.getKey());
                     editor.commit();
                 }
+                BaseFragment lastFragment = getParentLayout().getFragmentStack().get(Math.max(0, getParentLayout().getFragmentStack().size() - 2));
                 finishFragment();
                 if (screenType == SCREEN_TYPE_PREVIEW) {
                     NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.didApplyNewTheme, previousTheme, previousAccent, deleteOnCancel);
                 }
+                Theme.turnOffAutoNight(lastFragment);
             });
         }
 
@@ -2516,14 +2514,10 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             Theme.setChangingWallpaper(true);
         }
         if (screenType != SCREEN_TYPE_PREVIEW || accent != null) {
-            if (SharedConfig.getDevicePerformanceClass() == SharedConfig.PERFORMANCE_CLASS_LOW) {
-                int w = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
-                int h = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
-                imageFilter = (int) (w / AndroidUtilities.density) + "_" + (int) (h / AndroidUtilities.density) + "_f";
-            } else {
-                imageFilter = (int) (1080 / AndroidUtilities.density) + "_" + (int) (1920 / AndroidUtilities.density) + "_f";
-            }
-            maxWallpaperSize = Math.min(1920, Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y));
+            int w = Math.min(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
+            int h = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
+            imageFilter = (int) (w / AndroidUtilities.density) + "_" + (int) (h / AndroidUtilities.density) + "_f";
+            maxWallpaperSize = Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
 
             NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.wallpapersNeedReload);
             NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.wallpapersDidLoad);
@@ -2570,7 +2564,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
     }
 
     @Override
-    protected void onTransitionAnimationStart(boolean isOpen, boolean backward) {
+    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {
         super.onTransitionAnimationStart(isOpen, backward);
         if (!isOpen) {
             if (screenType == SCREEN_TYPE_CHANGE_BACKGROUND) {
@@ -3025,7 +3019,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             }
             boolean fileExists;
             File path;
-            int size;
+            long size;
             String fileName;
             if (object instanceof TLRPC.TL_wallPaper) {
                 TLRPC.TL_wallPaper wallPaper = (TLRPC.TL_wallPaper) object;
@@ -3033,13 +3027,13 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                 if (TextUtils.isEmpty(fileName)) {
                     return;
                 }
-                path = FileLoader.getPathToAttach(wallPaper.document, true);
+                path = FileLoader.getInstance(currentAccount).getPathToAttach(wallPaper.document, true);
                 size = wallPaper.document.size;
             } else {
                 MediaController.SearchImage wallPaper = (MediaController.SearchImage) object;
                 if (wallPaper.photo != null) {
                     TLRPC.PhotoSize photoSize = FileLoader.getClosestPhotoSizeWithSize(wallPaper.photo.sizes, maxWallpaperSize, true);
-                    path = FileLoader.getPathToAttach(photoSize, true);
+                    path = FileLoader.getInstance(currentAccount).getPathToAttach(photoSize, true);
                     fileName = FileLoader.getAttachFileName(photoSize);
                     size = photoSize.size;
                 } else {
@@ -3587,7 +3581,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
         }
         if (!Theme.hasThemeKey(Theme.key_chat_serviceBackground) || backgroundImage.getBackground() instanceof MotionBackgroundDrawable) {
             Theme.applyChatServiceMessageColor(new int[]{checkColor, checkColor, checkColor, checkColor}, backgroundImage.getBackground());
-        } else if (Theme.getCachedWallpaper() instanceof MotionBackgroundDrawable) {
+        } else if (Theme.getCachedWallpaperNonBlocking() instanceof MotionBackgroundDrawable) {
             int c = Theme.getColor(Theme.key_chat_serviceBackground);
             Theme.applyChatServiceMessageColor(new int[]{c, c, c, c}, backgroundImage.getBackground());
         }
@@ -3767,7 +3761,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
                     backgroundImage.setImage(ImageLocation.getForDocument(selectedPattern.document), imageFilter, null, null, "jpg", selectedPattern.document.size, 1, selectedPattern);
                 }
             } else {
-                Drawable backgroundDrawable = Theme.getCachedWallpaper();
+                Drawable backgroundDrawable = Theme.getCachedWallpaperNonBlocking();
                 if (backgroundDrawable != null) {
                     if (backgroundDrawable instanceof MotionBackgroundDrawable) {
                         ((MotionBackgroundDrawable) backgroundDrawable).setParentView(backgroundImage);
@@ -3856,7 +3850,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date;
             customDialog.verified = false;
             customDialog.isMedia = false;
-            customDialog.sent = true;
+            customDialog.sent = DialogCell.SENT_STATE_READ;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3870,7 +3864,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60;
             customDialog.verified = false;
             customDialog.isMedia = false;
-            customDialog.sent = false;
+            customDialog.sent = DialogCell.SENT_STATE_NOTHING;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3884,7 +3878,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60 * 2;
             customDialog.verified = false;
             customDialog.isMedia = true;
-            customDialog.sent = false;
+            customDialog.sent = DialogCell.SENT_STATE_NOTHING;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3898,7 +3892,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60 * 3;
             customDialog.verified = false;
             customDialog.isMedia = false;
-            customDialog.sent = false;
+            customDialog.sent = DialogCell.SENT_STATE_NOTHING;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3912,7 +3906,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60 * 4;
             customDialog.verified = false;
             customDialog.isMedia = false;
-            customDialog.sent = true;
+            customDialog.sent = DialogCell.SENT_STATE_READ;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3926,7 +3920,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60 * 5;
             customDialog.verified = false;
             customDialog.isMedia = false;
-            customDialog.sent = false;
+            customDialog.sent = DialogCell.SENT_STATE_NOTHING;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3940,7 +3934,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60 * 6;
             customDialog.verified = true;
             customDialog.isMedia = false;
-            customDialog.sent = false;
+            customDialog.sent = DialogCell.SENT_STATE_NOTHING;
             dialogs.add(customDialog);
 
             customDialog = new DialogCell.CustomDialog();
@@ -3954,7 +3948,7 @@ public class ThemePreviewActivity extends BaseFragment implements DownloadContro
             customDialog.date = date - 60 * 60 * 7;
             customDialog.verified = true;
             customDialog.isMedia = false;
-            customDialog.sent = false;
+            customDialog.sent = DialogCell.SENT_STATE_NOTHING;
             dialogs.add(customDialog);
         }
 

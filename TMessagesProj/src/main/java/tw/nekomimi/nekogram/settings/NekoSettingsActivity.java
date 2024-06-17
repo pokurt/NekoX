@@ -58,7 +58,6 @@ import java.util.Map;
 import java.util.function.Function;
 
 import kotlin.text.StringsKt;
-import tw.nekomimi.nekogram.ExternalGcm;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.FileUtil;
 import tw.nekomimi.nekogram.utils.GsonUtil;
@@ -188,15 +187,13 @@ public class NekoSettingsActivity extends BaseFragment {
     }
 
     private void backupSettings() {
-
         try {
-            File cacheFile = new File(ApplicationLoader.applicationContext.getCacheDir(), new Date().toLocaleString() + ".nekox-settings.json");
+            File cacheFile = new File(new File(ApplicationLoader.applicationContext.getCacheDir(), "nekox"), new Date().toLocaleString() + ".nekox-settings.json");
             FileUtil.writeUtf8String(backupSettingsJson(), cacheFile);
             ShareUtil.shareFile(getParentActivity(), cacheFile);
-        } catch (JSONException e) {
+        } catch (Exception e) {
             AlertUtil.showSimpleAlert(getParentActivity(), e);
         }
-
     }
 
     private String backupSettingsJson() throws JSONException {

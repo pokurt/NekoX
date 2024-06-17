@@ -15,11 +15,13 @@ import androidx.annotation.NonNull;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DocumentObject;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
 import org.telegram.ui.ActionBar.Theme;
 
 public class StickerEmptyView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
@@ -78,7 +80,9 @@ public class StickerEmptyView extends FrameLayout implements NotificationCenter.
             public void setVisibility(int visibility) {
                 if (getVisibility() == View.GONE && visibility == View.VISIBLE) {
                     setSticker();
-                    stickerView.getImageReceiver().startAnimation();
+                    if (LiteMode.isEnabled(LiteMode.FLAGS_ANIMATED_STICKERS)) {
+                        stickerView.getImageReceiver().startAnimation();
+                    }
                 } else if (visibility == View.GONE) {
                     stickerView.getImageReceiver().clearImage();
                 }
@@ -103,10 +107,10 @@ public class StickerEmptyView extends FrameLayout implements NotificationCenter.
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         subtitle.setGravity(Gravity.CENTER);
 
-        linearLayout.addView(stickerView, LayoutHelper.createLinear(130, 130, Gravity.CENTER_HORIZONTAL));
+        linearLayout.addView(stickerView, LayoutHelper.createLinear(117, 117, Gravity.CENTER_HORIZONTAL));
         linearLayout.addView(title, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 12, 0, 0));
         linearLayout.addView(subtitle, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 8, 0, 0));
-        addView(linearLayout, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 56, 0, 56, 30));
+        addView(linearLayout, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 46, 0, 46, 30));
 
         if (progressView == null) {
             progressBar = new RadialProgressView(context, resourcesProvider);
@@ -234,6 +238,10 @@ public class StickerEmptyView extends FrameLayout implements NotificationCenter.
             imageFilter = "130_130";
         }
 
+        if (!LiteMode.isEnabled(LiteMode.FLAGS_ANIMATED_STICKERS)) {
+            imageFilter += "_firstframe";
+        }
+
         if (document != null) {
             SvgHelper.SvgDrawable svgThumb = DocumentObject.getSvgThumb(document.thumbs, colorKey1, 0.2f);
             if (svgThumb != null) {
@@ -242,7 +250,7 @@ public class StickerEmptyView extends FrameLayout implements NotificationCenter.
 
             ImageLocation imageLocation = ImageLocation.getForDocument(document);
             stickerView.setImage(imageLocation, imageFilter, "tgs", svgThumb, set);
-            if (stickerType == 9) {
+            if (stickerType == 9 || stickerType == STICKER_TYPE_NO_CONTACTS) {
                 stickerView.getImageReceiver().setAutoRepeat(1);
             } else {
                 stickerView.getImageReceiver().setAutoRepeat(2);

@@ -22,10 +22,12 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Paint.Align;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -71,8 +73,11 @@ public class NumberPicker extends LinearLayout {
     private int mSelectorTextGapHeight;
     private String[] mDisplayedValues;
     private int mMinValue;
+    private boolean mMinValueSet;
     private int mMaxValue;
+    private boolean mMaxValueSet;
     private int mValue;
+    private int mFantomValue;
     private OnValueChangeListener mOnValueChangeListener;
     private OnScrollListener mOnScrollListener;
     private Formatter mFormatter;
@@ -94,7 +99,7 @@ public class NumberPicker extends LinearLayout {
     private int mTouchSlop;
     private int mMinimumFlingVelocity;
     private int mMaximumFlingVelocity;
-    private boolean mWrapSelectorWheel;
+    private boolean mWrapSelectorWheel, mWrapSelectorWheelSetting;
     private int mSolidColor;
     private Paint mSelectionDivider;
     private int mSelectionDividerHeight;
@@ -136,6 +141,10 @@ public class NumberPicker extends LinearLayout {
         SELECTOR_MIDDLE_ITEM_INDEX = SELECTOR_WHEEL_ITEM_COUNT / 2;
         mSelectorIndices = new int[SELECTOR_WHEEL_ITEM_COUNT];
         initializeSelectorWheelIndices();
+    }
+
+    public int getItemsCount() {
+        return SELECTOR_WHEEL_ITEM_COUNT;
     }
 
     private void init() {
@@ -623,10 +632,14 @@ public class NumberPicker extends LinearLayout {
     }
 
     public void setWrapSelectorWheel(boolean wrapSelectorWheel) {
-        final boolean wrappingAllowed = (mMaxValue - mMinValue) >= mSelectorIndices.length;
-        if ((!wrapSelectorWheel || wrappingAllowed) && wrapSelectorWheel != mWrapSelectorWheel) {
-            mWrapSelectorWheel = wrapSelectorWheel;
-        }
+        final boolean wrappingAllowed = !(mMaxValueSet && mMinValueSet) || allItemsCount != null && (mMaxValue - mMinValue + 1) >= allItemsCount;
+        mWrapSelectorWheel = wrappingAllowed && (mWrapSelectorWheelSetting = wrapSelectorWheel);
+    }
+
+    private Integer allItemsCount;
+    public void setAllItemsCount(int allItemsCount) {
+        this.allItemsCount = allItemsCount;
+        setWrapSelectorWheel(mWrapSelectorWheelSetting);
     }
 
     public void setOnLongPressUpdateInterval(long intervalMillis) {
@@ -642,6 +655,7 @@ public class NumberPicker extends LinearLayout {
     }
 
     public void setMinValue(int minValue) {
+        mMinValueSet = true;
         if (mMinValue == minValue) {
             return;
         }
@@ -650,10 +664,13 @@ public class NumberPicker extends LinearLayout {
         }
         mMinValue = minValue;
         if (mMinValue > mValue) {
-            mValue = mMinValue;
+            if (mMinValue <= mFantomValue) {
+                mValue = mFantomValue;
+            } else {
+                mValue = mMinValue;
+            }
         }
-        boolean wrapSelectorWheel = mMaxValue - mMinValue > mSelectorIndices.length;
-        setWrapSelectorWheel(wrapSelectorWheel);
+        setWrapSelectorWheel(mWrapSelectorWheelSetting);
         initializeSelectorWheelIndices();
         updateInputTextView();
         tryComputeMaxWidth();
@@ -665,6 +682,7 @@ public class NumberPicker extends LinearLayout {
     }
 
     public void setMaxValue(int maxValue) {
+        mMaxValueSet = true;
         if (mMaxValue == maxValue) {
             return;
         }
@@ -673,10 +691,13 @@ public class NumberPicker extends LinearLayout {
         }
         mMaxValue = maxValue;
         if (mMaxValue < mValue) {
-            mValue = mMaxValue;
+            if (mMaxValue >= mFantomValue) {
+                mValue = mFantomValue;
+            } else {
+                mValue = mMaxValue;
+            }
         }
-        boolean wrapSelectorWheel = mMaxValue - mMinValue > mSelectorIndices.length;
-        setWrapSelectorWheel(wrapSelectorWheel);
+        setWrapSelectorWheel(mWrapSelectorWheelSetting);
         initializeSelectorWheelIndices();
         updateInputTextView();
         tryComputeMaxWidth();
@@ -854,8 +875,13 @@ public class NumberPicker extends LinearLayout {
             current = Math.min(current, mMaxValue);
         }
         int previous = mValue;
-        mValue = current;
+        mValue = mFantomValue = current;
         updateInputTextView();
+        if (Math.abs(previous - current) > 0.9f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            try {
+                performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+            } catch (Exception ignore) {}
+        }
         if (notifyChange) {
             notifyChange(previous, current);
         }
@@ -863,7 +889,7 @@ public class NumberPicker extends LinearLayout {
         invalidate();
     }
 
-    private void changeValueByOne(boolean increment) {
+    protected void changeValueByOne(boolean increment) {
         mInputText.setVisibility(View.INVISIBLE);
         if (!moveToFinalScrollerPosition(mFlingScroller)) {
             moveToFinalScrollerPosition(mAdjustScroller);
@@ -942,9 +968,9 @@ public class NumberPicker extends LinearLayout {
     }
 
     private int getWrappedSelectorIndex(int selectorIndex) {
-        if (selectorIndex > mMaxValue) {
+        if (mMaxValueSet && selectorIndex > mMaxValue && mMaxValue - mMinValue != 0) {
             return mMinValue + (selectorIndex - mMaxValue) % (mMaxValue - mMinValue) - 1;
-        } else if (selectorIndex < mMinValue) {
+        } else if (mMinValueSet && selectorIndex < mMinValue && mMaxValue - mMinValue != 0) {
             return mMaxValue - (mMinValue - selectorIndex) % (mMaxValue - mMinValue) + 1;
         }
         return selectorIndex;

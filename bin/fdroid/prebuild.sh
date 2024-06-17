@@ -29,7 +29,3 @@ rm jni/boringssl/util/ar/testdata/mac/libsample.a
 rm jni/boringssl/util/ar/testdata/linux/libsample.a
 
 popd
-
-rm -rf ssr-libev/src/main/jni/pcre/dist/testdata
-rm -rf ssr-libev/src/main/jni/mbedtls/programs/fuzz/corpuses
-rm -rf ssr-libev/src/main/jni/mbedtls/tests/data_files

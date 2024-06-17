@@ -17,12 +17,15 @@ import android.os.Build;
 @SuppressWarnings("ConstantConditions")
 public class BuildVars {
 
+    public static final boolean IS_BILLING_UNAVAILABLE = true;
     public static boolean DEBUG_VERSION = BuildConfig.BUILD_TYPE.equals("debug");
     public static boolean DEBUG_PRIVATE_VERSION = DEBUG_VERSION;
     public static boolean LOGS_ENABLED = DEBUG_PRIVATE_VERSION;
     public static boolean USE_CLOUD_STRINGS = true;
     public static boolean NO_SCOPED_STORAGE = Build.VERSION.SDK_INT <= 29;
 
+    // SafetyNet key for Google Identity SDK, set it to empty to disable
+    public static String SAFETYNET_KEY = "AIzaSyDqt8P-7F7CPCseMkOiVRgb1LY8RN1bvH8";
     public static int BUILD_VERSION; // generated
     public static String BUILD_VERSION_STRING;
 
@@ -36,6 +39,7 @@ public class BuildVars {
     public static boolean isPlay = BuildConfig.FLAVOR.endsWith("Play");
     public static boolean isFdroid = BuildConfig.BUILD_TYPE.toLowerCase().contains("fdroid");
     public static boolean isMini = !BuildConfig.FLAVOR.startsWith("full");
+    public static boolean isGServicesCompiled = BuildConfig.BUILD_TYPE.equals("debug") || BuildConfig.BUILD_TYPE.equals("release");
 
     static {
 
@@ -52,5 +56,9 @@ public class BuildVars {
             SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
             LOGS_ENABLED = DEBUG_VERSION = sharedPreferences.getBoolean("logsEnabled", DEBUG_VERSION);
         }
+    }
+
+    public static boolean useInvoiceBilling() {
+        return true;
     }
 }

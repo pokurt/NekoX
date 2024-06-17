@@ -342,7 +342,7 @@ public class DocumentSelectActivity extends BaseFragment {
                 setMeasuredDimension(widthSize, heightSize);
 
                 int kbHeight = getKeyboardHeight();
-                int keyboardSize = SharedConfig.smoothKeyboard ? 0 : kbHeight;
+                int keyboardSize = kbHeight;
                 if (keyboardSize <= AndroidUtilities.dp(20)) {
                     if (!AndroidUtilities.isInMultiwindow && commentTextView != null && frameLayout2.getParent() == this) {
                         heightSize -= commentTextView.getEmojiPadding();
@@ -388,7 +388,7 @@ public class DocumentSelectActivity extends BaseFragment {
                 }
                 final int count = getChildCount();
 
-                int keyboardSize = SharedConfig.smoothKeyboard ? 0 : getKeyboardHeight();
+                int keyboardSize = getKeyboardHeight();
                 int paddingBottom = commentTextView != null && frameLayout2.getParent() == this && keyboardSize <= AndroidUtilities.dp(20) && !AndroidUtilities.isInMultiwindow && !AndroidUtilities.isTablet() ? commentTextView.getEmojiPadding() : 0;
                 setBottomClip(paddingBottom);
 
@@ -614,7 +614,7 @@ public class DocumentSelectActivity extends BaseFragment {
         if (commentTextView != null) {
             commentTextView.onDestroy();
         }
-        commentTextView = new EditTextEmoji(context, sizeNotifierFrameLayout, null, EditTextEmoji.STYLE_DIALOG);
+        commentTextView = new EditTextEmoji(context, sizeNotifierFrameLayout, null, EditTextEmoji.STYLE_DIALOG, false);
         InputFilter[] inputFilters = new InputFilter[1];
         inputFilters[0] = new InputFilter.LengthFilter(MessagesController.getInstance(UserConfig.selectedAccount).maxCaptionLength);
         commentTextView.setFilters(inputFilters);

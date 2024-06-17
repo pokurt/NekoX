@@ -3,15 +3,15 @@ import cn.hutool.core.util.RuntimeUtil
 apply plugin: "com.android.application"
 apply plugin: "kotlin-android"
 
-def verName = "8.7.4-preview01"
-def verCode = 630
+def verName = "9.5.8"
+def verCode = 750
 
 if (System.getenv("DEBUG_BUILD") == "true") {
-    verName += "-" + RuntimeUtil.execForStr("git log --pretty=format:'%h' -n 1").trim()
+    verName += "-" + RuntimeUtil.execForStr("git log --pretty=format:'%h' -n 1").trim().replace('\'','')
 }
 
-def officialVer = "8.7.4"
-def officialCode = 2636
+def officialVer = "9.5.8"
+def officialCode = 3252
 
 def serviceAccountCredentialsFile = rootProject.file("service_account_credentials.json")
 
@@ -72,8 +72,8 @@ def nativeTarget = System.getenv("NATIVE_TARGET")
 if (nativeTarget == null) nativeTarget = ""
 
 android {
-    compileSdkVersion 31
-    buildToolsVersion "31.0.0"
+    compileSdkVersion 33
+    buildToolsVersion "33.0.0"
     ndkVersion rootProject.ext.ndkVersion
 
     defaultConfig.applicationId = "nekox.messenger"
@@ -85,11 +85,17 @@ android {
                 enable false
                 universalApk true
             } else {
-                enable true
-                universalApk false
-                if (!nativeTarget.isBlank()) {
+                if (nativeTarget.toLowerCase().equals("universal")) {
+                    enable false
+                    universalApk true
+                } else if (!nativeTarget.isBlank()) {
+                    enable true
+                    universalApk false
                     reset()
                     include nativeTarget
+                } else {
+                    enable true
+                    universalApk false
                 }
             }
         }
@@ -97,9 +103,9 @@ android {
     }
 
     defaultConfig {
-        minSdkVersion 16
+        minSdkVersion 19
         //noinspection ExpiredTargetSdkVersion,OldTargetApi
-        targetSdkVersion 30
+        targetSdkVersion 32
 
         versionName verName
         versionCode verCode
@@ -123,7 +129,7 @@ android {
         externalNativeBuild {
             cmake {
                 version "3.10.2"
-                arguments "-DANDROID_STL=c++_static", "-DANDROID_PLATFORM=android-16", "-j=${Runtime.getRuntime().availableProcessors()}"
+                arguments "-DANDROID_STL=c++_static", "-DANDROID_PLATFORM=android-16"
             }
         }
 
@@ -141,38 +147,20 @@ android {
         }
     }
 
-    lintOptions {
-        disable "MissingTranslation"
-        disable "ExtraTranslation"
-        disable "BlockedPrivateApi"
-    }
-
-    packagingOptions {
-
-        exclude "/fabric/**"
-        exclude "/META-INF/*.version"
-        exclude "/META-INF/*.kotlin_module"
-        exclude "/META-INF/native-image/**"
-        exclude "/builddef.lst"
-        exclude "/*.txt"
-        exclude "/DebugProbesKt.bin"
-        exclude "/okhttp3/internal/publicsuffix/NOTICE"
-
-    }
 
     dexOptions {
         jumboMode = true
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
 
         coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     testOptions {
@@ -337,36 +325,37 @@ android {
 
 }
 
-def okHttpVersion = "5.0.0-alpha.2"
-def fcmVersion = "21.1.0"
-def crashlyticsVersion = "18.2.0"
-def playCoreVersion = "1.10.1"
+def fcmVersion = "23.0.7"
+def crashlyticsVersion = "18.2.12"
+def playCoreVersion = "1.10.3"
 
 dependencies {
 
-    implementation "androidx.browser:browser:1.4.0"
-    implementation "androidx.core:core-ktx:1.7.0"
+    implementation "androidx.browser:browser:1.5.0"
+    implementation "androidx.core:core-ktx:1.9.0"
     implementation "androidx.palette:palette-ktx:1.0.0"
     implementation "androidx.viewpager:viewpager:1.0.0"
-    implementation "androidx.exifinterface:exifinterface:1.3.3"
+    implementation "androidx.exifinterface:exifinterface:1.3.6"
     implementation "androidx.interpolator:interpolator:1.0.0"
     implementation "androidx.dynamicanimation:dynamicanimation:1.0.0"
     implementation "androidx.multidex:multidex:2.0.1"
-    implementation "androidx.sharetarget:sharetarget:1.1.0"
+    implementation "androidx.sharetarget:sharetarget:1.2.0"
 
-    compileOnly "org.checkerframework:checker-qual:3.16.0"
-    compileOnly "org.checkerframework:checker-compat-qual:2.5.5"
+    // just follow official
+    compileOnly 'org.checkerframework:checker-qual:2.5.2'
+    compileOnly 'org.checkerframework:checker-compat-qual:2.5.0'
 
     // don"t change this :)
     //noinspection GradleDependency
     implementation "com.googlecode.mp4parser:isoparser:1.0.6"
 
-    implementation "com.google.code.gson:gson:2.8.8"
+    implementation "com.google.code.gson:gson:2.8.9"
     implementation "org.osmdroid:osmdroid-android:6.1.10"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.5.30"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.7.10"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.1"
 
-    implementation "com.squareup.okhttp3:okhttp:$okHttpVersion"
+    implementation "com.squareup.okhttp3:okhttp:5.0.0-alpha.10"
+    implementation 'com.neovisionaries:nv-websocket-client:2.14'
     implementation 'dnsjava:dnsjava:3.4.1'
     implementation "org.dizitart:nitrite:3.4.3"
 
@@ -374,6 +363,7 @@ dependencies {
     implementation "cn.hutool:hutool-crypto:5.7.13"
     implementation 'cn.hutool:hutool-http:5.7.5'
     implementation "com.jakewharton:process-phoenix:2.1.2"
+    implementation 'com.google.guava:guava:31.1-android'
 
     compileOnly 'org.yaml:snakeyaml:1.29'
     fullImplementation 'org.yaml:snakeyaml:1.29'
@@ -386,6 +376,11 @@ dependencies {
     compileOnly "com.google.firebase:firebase-crashlytics:$crashlyticsVersion"
     compileOnly "com.google.android.play:core:$playCoreVersion"
 
+    debugImplementation 'com.google.android.gms:play-services-maps:18.1.0'
+    debugImplementation 'com.google.android.gms:play-services-location:20.0.0'
+    releaseImplementation 'com.google.android.gms:play-services-maps:18.1.0'
+    releaseImplementation 'com.google.android.gms:play-services-location:20.0.0'
+
     debugImplementation "com.google.firebase:firebase-messaging:$fcmVersion"
     debugImplementation "com.google.firebase:firebase-crashlytics:$crashlyticsVersion"
     debugImplementation "com.google.android.play:core:$playCoreVersion"
@@ -394,10 +389,10 @@ dependencies {
     releaseImplementation "com.google.android.play:core:$playCoreVersion"
 
     testImplementation "junit:junit:4.13.2"
-    testImplementation "androidx.test:core:1.4.0"
+    testImplementation "androidx.test:core:1.5.0"
     testImplementation "org.robolectric:robolectric:4.5.1"
 
-    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
+    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.2.0"
 
 }
 
@@ -405,6 +400,20 @@ apply plugin: "com.google.gms.google-services"
 apply plugin: "com.google.firebase.crashlytics"
 
 android {
+
+
+    packagingOptions {
+        jniLibs {
+            excludes += ['/fabric/**', '/META-INF/native-image/**']
+        }
+        resources {
+            excludes += ['/fabric/**', '/META-INF/*.version', '/META-INF/*.kotlin_module', '/META-INF/native-image/**', '/builddef.lst', '/*.txt', '/DebugProbesKt.bin', '/okhttp3/internal/publicsuffix/NOTICE']
+        }
+    }
+    namespace "org.telegram.messenger"
+    lint {
+        disable 'MissingTranslation', 'ExtraTranslation', 'BlockedPrivateApi'
+    }
 
     tasks.all { task ->
         if (task.name.startsWith("uploadCrashlyticsMappingFile")) {

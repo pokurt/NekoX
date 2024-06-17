@@ -5,7 +5,6 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.TimeInterpolator;
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
-import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
@@ -40,6 +39,7 @@ import androidx.core.math.MathUtils;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
+import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
@@ -49,7 +49,6 @@ import org.telegram.ui.Components.TextStyleSpan;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Stack;
@@ -62,7 +61,6 @@ public class SpoilerEffect extends Drawable {
     public final static int PARTICLES_PER_CHARACTER = measureParticlesPerCharacter();
     private final static float VERTICAL_PADDING_DP = 2.5f;
     private final static int RAND_REPEAT = 14;
-    private final static float KEYPOINT_DELTA = 5f;
     private final static int FPS = 30;
     private final static int renderDelayMs = 1000 / FPS + 1;
     public final static float[] ALPHAS = {
@@ -94,7 +92,6 @@ public class SpoilerEffect extends Drawable {
     private ValueAnimator rippleAnimator;
 
     private List<RectF> spaces = new ArrayList<>();
-    private List<Long> keyPoints;
     private int mAlpha = 0xFF;
 
     private TimeInterpolator rippleInterpolator = input -> input;
@@ -251,16 +248,6 @@ public class SpoilerEffect extends Drawable {
     }
 
     /**
-     * Sets new keypoints
-     *
-     * @param keyPoints New keypoints
-     */
-    public void setKeyPoints(List<Long> keyPoints) {
-        this.keyPoints = keyPoints;
-        invalidateSelf();
-    }
-
-    /**
      * Gets ripple path
      */
     public void getRipplePath(Path path) {
@@ -405,9 +392,10 @@ public class SpoilerEffect extends Drawable {
             Paint shaderPaint = SpoilerEffectBitmapFactory.getInstance().getPaint();
             shaderPaint.setColorFilter(new PorterDuffColorFilter(lastColor, PorterDuff.Mode.SRC_IN));
             canvas.drawRect(getBounds().left, getBounds().top, getBounds().right, getBounds().bottom, SpoilerEffectBitmapFactory.getInstance().getPaint());
-            invalidateSelf();
-
-            SpoilerEffectBitmapFactory.getInstance().checkUpdate();
+            if (LiteMode.isEnabled(LiteMode.FLAG_CHAT_SPOILER)) {
+                invalidateSelf();
+                SpoilerEffectBitmapFactory.getInstance().checkUpdate();
+            }
         }
     }
 
@@ -417,11 +405,13 @@ public class SpoilerEffect extends Drawable {
     public void setVisibleBounds(float left, float top, float right, float bottom) {
         if (visibleRect == null)
             visibleRect = new RectF();
-        visibleRect.left = left;
-        visibleRect.top = top;
-        visibleRect.right = right;
-        visibleRect.bottom = bottom;
-        invalidateSelf();
+        if (visibleRect.left != left || visibleRect.right != right || visibleRect.top != top || visibleRect.bottom != bottom) {
+            visibleRect.left = left;
+            visibleRect.top = top;
+            visibleRect.right = right;
+            visibleRect.bottom = bottom;
+            invalidateSelf();
+        }
     }
 
     private boolean isOutOfBounds(int left, int top, int right, int bottom, float x, float y) {
@@ -438,15 +428,8 @@ public class SpoilerEffect extends Drawable {
     }
 
     private void generateRandomLocation(Particle newParticle, int i) {
-        if (keyPoints != null && !keyPoints.isEmpty()) {
-            float rf = particleRands[i % RAND_REPEAT];
-            long kp = keyPoints.get(Utilities.fastRandom.nextInt(keyPoints.size()));
-            newParticle.x = getBounds().left + (kp >> 16) + rf * AndroidUtilities.dp(KEYPOINT_DELTA) - AndroidUtilities.dp(KEYPOINT_DELTA / 2f);
-            newParticle.y = getBounds().top + (kp & 0xFFFF) + rf * AndroidUtilities.dp(KEYPOINT_DELTA) - AndroidUtilities.dp(KEYPOINT_DELTA / 2f);
-        } else {
-            newParticle.x = getBounds().left + Utilities.fastRandom.nextFloat() * getBounds().width();
-            newParticle.y = getBounds().top + Utilities.fastRandom.nextFloat() * getBounds().height();
-        }
+        newParticle.x = getBounds().left + Utilities.fastRandom.nextFloat() * getBounds().width();
+        newParticle.y = getBounds().top + Utilities.fastRandom.nextFloat() * getBounds().height();
     }
 
     @Override
@@ -518,42 +501,6 @@ public class SpoilerEffect extends Drawable {
     @Override
     public int getOpacity() {
         return PixelFormat.TRANSPARENT;
-    }
-
-    /**
-     * @param textLayout Text layout to measure
-     * @return Measured key points
-     */
-    public static synchronized List<Long> measureKeyPoints(Layout textLayout) {
-        int w = textLayout.getWidth();
-        int h = textLayout.getHeight();
-
-        if (w == 0 || h == 0)
-            return Collections.emptyList();
-
-        Bitmap measureBitmap = Bitmap.createBitmap(Math.round(w), Math.round(h), Bitmap.Config.ARGB_4444); // We can use 4444 as we don't need accuracy here
-        Canvas measureCanvas = new Canvas(measureBitmap);
-        textLayout.draw(measureCanvas);
-
-        int[] pixels = new int[measureBitmap.getWidth() * measureBitmap.getHeight()];
-        measureBitmap.getPixels(pixels, 0, measureBitmap.getWidth(), 0, 0, w, h);
-
-        int sX = -1;
-        ArrayList<Long> keyPoints = new ArrayList<>(pixels.length);
-        for (int x = 0; x < w; x++) {
-            for (int y = 0; y < h; y++) {
-                int clr = pixels[y * measureBitmap.getWidth() + x];
-                if (Color.alpha(clr) >= 0x80) {
-                    if (sX == -1) {
-                        sX = x;
-                    }
-                    keyPoints.add(((long) (x - sX) << 16) + y);
-                }
-            }
-        }
-        keyPoints.trimToSize();
-        measureBitmap.recycle();
-        return keyPoints;
     }
 
     /**
@@ -662,8 +609,6 @@ public class SpoilerEffect extends Drawable {
         spoilerEffect.setBounds((int) Math.min(ps, pe), (int) lineTop, (int) Math.max(ps, pe), (int) lineBottom);
         spoilerEffect.setColor(textLayout.getPaint().getColor());
         spoilerEffect.setRippleInterpolator(Easings.easeInQuad);
-        if (!spoilerEffect.isLowDevice)
-            spoilerEffect.setKeyPoints(SpoilerEffect.measureKeyPoints(newLayout));
         spoilerEffect.updateMaxParticles();
         if (v != null) {
             spoilerEffect.setParentView(v);
@@ -701,8 +646,7 @@ public class SpoilerEffect extends Drawable {
 
     /**
      * Optimized version of text layout double-render
-     *
-     * @param v                        View to use as a parent view
+     *  @param v                        View to use as a parent view
      * @param invalidateSpoilersParent Set to invalidate parent or not
      * @param spoilersColor            Spoilers' color
      * @param verticalOffset           Additional vertical offset
@@ -710,10 +654,11 @@ public class SpoilerEffect extends Drawable {
      * @param textLayout               Layout to render
      * @param spoilers                 Spoilers list to render
      * @param canvas                   Canvas to render
+     * @param useParentWidth
      */
     @SuppressLint("WrongConstant")
     @MainThread
-    public static void renderWithRipple(View v, boolean invalidateSpoilersParent, int spoilersColor, int verticalOffset, AtomicReference<Layout> patchedLayoutRef, Layout textLayout, List<SpoilerEffect> spoilers, Canvas canvas) {
+    public static void renderWithRipple(View v, boolean invalidateSpoilersParent, int spoilersColor, int verticalOffset, AtomicReference<Layout> patchedLayoutRef, Layout textLayout, List<SpoilerEffect> spoilers, Canvas canvas, boolean useParentWidth) {
         if (spoilers.isEmpty()) {
             textLayout.draw(canvas);
             return;
@@ -792,7 +737,11 @@ public class SpoilerEffect extends Drawable {
 
             boolean useAlphaLayer = spoilers.get(0).rippleProgress != -1;
             if (useAlphaLayer) {
-                canvas.saveLayer(0, 0, v.getMeasuredWidth(), v.getMeasuredHeight(), null, canvas.ALL_SAVE_FLAG);
+                int w = v.getMeasuredWidth();
+                if (useParentWidth && v.getParent() instanceof View) {
+                    w = ((View) v.getParent()).getMeasuredWidth();
+                }
+                canvas.saveLayer(0, 0, w, v.getMeasuredHeight(), null, canvas.ALL_SAVE_FLAG);
             } else {
                 canvas.save();
             }

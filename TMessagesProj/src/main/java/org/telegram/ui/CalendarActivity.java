@@ -9,6 +9,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
@@ -59,10 +60,13 @@ import org.telegram.ui.Components.HintView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.SharedMediaLayout;
+import org.telegram.ui.Components.spoilers.SpoilerEffect;
 
 import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Calendar;
+
+import tw.nekomimi.nekogram.NekoConfig;
 
 public class CalendarActivity extends BaseFragment {
 
@@ -87,6 +91,7 @@ public class CalendarActivity extends BaseFragment {
     Paint blackoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private long dialogId;
+    private int topicId;
     private boolean loading;
     private boolean checkEnterItems;
     private boolean inSelectionMode;
@@ -121,6 +126,9 @@ public class CalendarActivity extends BaseFragment {
 
     private int calendarType;
 
+    private Path path = new Path();
+    private SpoilerEffect mediaSpoilerEffect = new SpoilerEffect();
+
     public CalendarActivity(Bundle args, int photosVideosTypeFilter, int selectedDate) {
         super(args);
         this.photosVideosTypeFilter = photosVideosTypeFilter;
@@ -140,6 +148,7 @@ public class CalendarActivity extends BaseFragment {
     @Override
     public boolean onFragmentCreate() {
         dialogId = getArguments().getLong("dialog_id");
+        topicId = getArguments().getInt("topic_id");
         calendarType = getArguments().getInt("type");
 
         if (dialogId >= 0) {
@@ -312,9 +321,8 @@ public class CalendarActivity extends BaseFragment {
                     @Override
                     public void run(boolean forAll) {
                         finishFragment();
-
-                        if (parentLayout.fragmentsStack.size() >= 2) {
-                            BaseFragment fragment = parentLayout.fragmentsStack.get(parentLayout.fragmentsStack.size() - 2);
+                        if (parentLayout != null && parentLayout.getFragmentStack().size() >= 2) {
+                            BaseFragment fragment = parentLayout.getFragmentStack().get(parentLayout.getFragmentStack().size() - 2);
                             if (fragment instanceof ChatActivity) {
                                 ((ChatActivity) fragment).deleteHistory(dateSelectedStart, dateSelectedEnd + 86400, forAll);
                             }
@@ -600,6 +608,9 @@ public class CalendarActivity extends BaseFragment {
                 @SuppressLint("NotifyDataSetChanged")
                 @Override
                 public boolean onSingleTapUp(MotionEvent e) {
+                    if (parentLayout == null) {
+                        return false;
+                    }
                     if (calendarType == TYPE_MEDIA_CALENDAR && messagesByDays != null) {
                         PeriodDay day = getDayAtCoord(e.getX(), e.getY());
                         if (day != null && day.messageObject != null && callback != null) {
@@ -640,8 +651,8 @@ public class CalendarActivity extends BaseFragment {
                             }
                         } else {
                             PeriodDay day = getDayAtCoord(e.getX(), e.getY());
-                            if (parentLayout.fragmentsStack.size() >= 2) {
-                                BaseFragment fragment = parentLayout.fragmentsStack.get(parentLayout.fragmentsStack.size() - 2);
+                            if (day != null && parentLayout != null && parentLayout.getFragmentStack().size() >= 2) {
+                                BaseFragment fragment = parentLayout.getFragmentStack().get(parentLayout.getFragmentStack().size() - 2);
                                 if (fragment instanceof ChatActivity) {
                                     finishFragment();
                                     ((ChatActivity) fragment).jumpToDate(day.date);
@@ -691,6 +702,7 @@ public class CalendarActivity extends BaseFragment {
                     PeriodDay periodDay = getDayAtCoord(e.getX(), e.getY());
 
                     if (periodDay != null) {
+                        if (!NekoConfig.disableVibration.Bool())
                         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
 
                         Bundle bundle = new Bundle();
@@ -710,8 +722,8 @@ public class CalendarActivity extends BaseFragment {
                         cellJump.setTextAndIcon(LocaleController.getString("JumpToDate", R.string.JumpToDate), R.drawable.msg_message);
                         cellJump.setMinimumWidth(160);
                         cellJump.setOnClickListener(view -> {
-                            if (parentLayout.fragmentsStack.size() >= 3) {
-                                BaseFragment fragment = parentLayout.fragmentsStack.get(parentLayout.fragmentsStack.size() - 3);
+                            if (parentLayout != null && parentLayout.getFragmentStack().size() >= 3) {
+                                BaseFragment fragment = parentLayout.getFragmentStack().get(parentLayout.getFragmentStack().size() - 3);
                                 if (fragment instanceof ChatActivity) {
                                     AndroidUtilities.runOnUIThread(() -> {
                                         finishFragment();
@@ -740,8 +752,8 @@ public class CalendarActivity extends BaseFragment {
                             cellDelete.setTextAndIcon(LocaleController.getString("ClearHistory", R.string.ClearHistory), R.drawable.msg_delete);
                             cellDelete.setMinimumWidth(160);
                             cellDelete.setOnClickListener(view -> {
-                                if (parentLayout.fragmentsStack.size() >= 3) {
-                                    BaseFragment fragment = parentLayout.fragmentsStack.get(parentLayout.fragmentsStack.size() - 3);
+                                if (parentLayout.getFragmentStack().size() >= 3) {
+                                    BaseFragment fragment = parentLayout.getFragmentStack().get(parentLayout.getFragmentStack().size() - 3);
                                     if (fragment instanceof ChatActivity) {
                                         AlertsCreator.createClearDaysDialogAlert(CalendarActivity.this, 1, getMessagesController().getUser(dialogId), null, false, new MessagesStorage.BooleanCallback() {
                                             @Override
@@ -773,11 +785,10 @@ public class CalendarActivity extends BaseFragment {
                         });
                         blurredView.setVisibility(View.GONE);
                         blurredView.setFitsSystemWindows(true);
-                        parentLayout.containerView.addView(blurredView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                        parentLayout.getOverlayContainerView().addView(blurredView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
                         prepareBlurBitmap();
 
                         presentFragmentAsPreviewWithMenu(chatActivity, previewMenu);
-
                     }
                 }
             });
@@ -919,6 +930,7 @@ public class CalendarActivity extends BaseFragment {
                     PeriodDay periodDay = messagesByDays.get(key);
                     MessageObject messageObject = periodDay.messageObject;
                     if (messageObject != null) {
+                        boolean hasMediaSpoilers = messageObject.hasMediaSpoilers();
                         if (messageObject.isVideo()) {
                             TLRPC.Document document = messageObject.getDocument();
                             TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 50);
@@ -928,9 +940,9 @@ public class CalendarActivity extends BaseFragment {
                             }
                             if (thumb != null) {
                                 if (messageObject.strippedThumb != null) {
-                                    receiver.setImage(ImageLocation.getForDocument(qualityThumb, document), "44_44", messageObject.strippedThumb, null, messageObject, 0);
+                                    receiver.setImage(ImageLocation.getForDocument(qualityThumb, document), hasMediaSpoilers ? "5_5_b" : "44_44", messageObject.strippedThumb, null, messageObject, 0);
                                 } else {
-                                    receiver.setImage(ImageLocation.getForDocument(qualityThumb, document), "44_44", ImageLocation.getForDocument(thumb, document), "b", (String) null, messageObject, 0);
+                                    receiver.setImage(ImageLocation.getForDocument(qualityThumb, document), hasMediaSpoilers ? "5_5_b" : "44_44", ImageLocation.getForDocument(thumb, document), "b", (String) null, messageObject, 0);
                                 }
                             }
                         } else if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaPhoto && messageObject.messageOwner.media.photo != null && !messageObject.photoThumbs.isEmpty()) {
@@ -941,9 +953,9 @@ public class CalendarActivity extends BaseFragment {
                                     currentPhotoObjectThumb = null;
                                 }
                                 if (messageObject.strippedThumb != null) {
-                                    receiver.setImage(ImageLocation.getForObject(currentPhotoObject, messageObject.photoThumbsObject), "44_44", null, null, messageObject.strippedThumb, currentPhotoObject != null ? currentPhotoObject.size : 0, null, messageObject, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 1);
+                                    receiver.setImage(ImageLocation.getForObject(currentPhotoObject, messageObject.photoThumbsObject), hasMediaSpoilers ? "5_5_b" : "44_44", null, null, messageObject.strippedThumb, currentPhotoObject != null ? currentPhotoObject.size : 0, null, messageObject, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 1);
                                 } else {
-                                    receiver.setImage(ImageLocation.getForObject(currentPhotoObject, messageObject.photoThumbsObject), "44_44", ImageLocation.getForObject(currentPhotoObjectThumb, messageObject.photoThumbsObject), "b", currentPhotoObject != null ? currentPhotoObject.size : 0, null, messageObject, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 1);
+                                    receiver.setImage(ImageLocation.getForObject(currentPhotoObject, messageObject.photoThumbsObject), hasMediaSpoilers ? "5_5_b" : "44_44", ImageLocation.getForObject(currentPhotoObjectThumb, messageObject.photoThumbsObject), "b", currentPhotoObject != null ? currentPhotoObject.size : 0, null, messageObject, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 1);
                                 }
                             } else {
                                 if (messageObject.strippedThumb != null) {
@@ -1055,6 +1067,24 @@ public class CalendarActivity extends BaseFragment {
                         imagesByDays.get(i).setAlpha(day.enterAlpha);
                         imagesByDays.get(i).setImageCoords(cx - (AndroidUtilities.dp(44) - pad) / 2f, cy - (AndroidUtilities.dp(44) - pad) / 2f, AndroidUtilities.dp(44) - pad, AndroidUtilities.dp(44) - pad);
                         imagesByDays.get(i).draw(canvas);
+
+                        if (messagesByDays.get(i) != null && messagesByDays.get(i).messageObject != null && messagesByDays.get(i).messageObject.hasMediaSpoilers()) {
+                            float rad = (AndroidUtilities.dp(44) - pad) / 2f;
+                            path.rewind();
+                            path.addCircle(cx, cy, rad, Path.Direction.CW);
+
+                            canvas.save();
+                            canvas.clipPath(path);
+
+                            int sColor = Color.WHITE;
+                            mediaSpoilerEffect.setColor(ColorUtils.setAlphaComponent(sColor, (int) (Color.alpha(sColor) * 0.325f * day.enterAlpha)));
+                            mediaSpoilerEffect.setBounds((int) (cx - rad), (int) (cy - rad), (int) (cx + rad), (int) (cy + rad));
+                            mediaSpoilerEffect.draw(canvas);
+
+                            invalidate();
+
+                            canvas.restore();
+                        }
 
                         blackoutPaint.setColor(ColorUtils.setAlphaComponent(Color.BLACK, (int) (day.enterAlpha * 80)));
                         canvas.drawCircle(cx, cy, (AndroidUtilities.dp(44) - pad) / 2f, blackoutPaint);
@@ -1262,13 +1292,13 @@ public class CalendarActivity extends BaseFragment {
     }
 
     @Override
-    protected void onTransitionAnimationStart(boolean isOpen, boolean backward) {
+    public void onTransitionAnimationStart(boolean isOpen, boolean backward) {
         super.onTransitionAnimationStart(isOpen, backward);
         isOpened = true;
     }
 
     @Override
-    protected void onTransitionAnimationProgress(boolean isOpen, float progress) {
+    public void onTransitionAnimationProgress(boolean isOpen, float progress) {
         super.onTransitionAnimationProgress(isOpen, progress);
         if (blurredView != null && blurredView.getVisibility() == View.VISIBLE) {
             if (isOpen) {
@@ -1280,7 +1310,7 @@ public class CalendarActivity extends BaseFragment {
     }
 
     @Override
-    protected void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
+    public void onTransitionAnimationEnd(boolean isOpen, boolean backward) {
         if (isOpen && blurredView != null && blurredView.getVisibility() == View.VISIBLE) {
             blurredView.setVisibility(View.GONE);
             blurredView.setBackground(null);
@@ -1394,12 +1424,12 @@ public class CalendarActivity extends BaseFragment {
         if (blurredView == null) {
             return;
         }
-        int w = (int) (parentLayout.getMeasuredWidth() / 6.0f);
-        int h = (int) (parentLayout.getMeasuredHeight() / 6.0f);
+        int w = (int) (parentLayout.getView().getMeasuredWidth() / 6.0f);
+        int h = (int) (parentLayout.getView().getMeasuredHeight() / 6.0f);
         Bitmap bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(bitmap);
         canvas.scale(1.0f / 6.0f, 1.0f / 6.0f);
-        parentLayout.draw(canvas);
+        parentLayout.getView().draw(canvas);
         Utilities.stackBlurBitmap(bitmap, Math.max(7, Math.max(w, h) / 180));
         blurredView.setBackground(new BitmapDrawable(bitmap));
         blurredView.setAlpha(0.0f);

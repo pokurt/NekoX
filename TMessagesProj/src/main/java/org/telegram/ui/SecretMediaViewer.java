@@ -97,6 +97,19 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
         protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
             return child != aspectRatioFrameLayout && super.drawChild(canvas, child, drawingTime);
         }
+
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            centerImage.onAttachedToWindow();
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            centerImage.onDetachedFromWindow();
+        }
     }
 
     private class SecretDeleteTimer extends FrameLayout {
@@ -788,7 +801,13 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
         if (document != null) {
             if (MessageObject.isGifDocument(document)) {
                 actionBar.setTitle(LocaleController.getString("DisappearingGif", R.string.DisappearingGif));
-                centerImage.setImage(ImageLocation.getForDocument(document), null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, -1, null, messageObject, 1);
+                ImageLocation location;
+                if (messageObject.messageOwner.attachPath != null && messageObject.attachPathExists) {
+                    location = ImageLocation.getForPath(messageObject.messageOwner.attachPath);
+                } else {
+                    location =ImageLocation.getForDocument(document);
+                }
+                centerImage.setImage(location, null, currentThumb != null ? new BitmapDrawable(currentThumb.bitmap) : null, -1, null, messageObject, 1);
                 secretDeleteTimer.setDestroyTime((long) messageObject.messageOwner.destroyTime * 1000, messageObject.messageOwner.ttl, false);
             } else {
                 playerRetryPlayCount = 1;
@@ -797,7 +816,7 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
                 if (f.exists()) {
                     preparePlayer(f);
                 } else {
-                    File file = FileLoader.getPathToMessage(messageObject.messageOwner);
+                    File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageObject.messageOwner);
                     File encryptedFile = new File(file.getAbsolutePath() + ".enc");
                     if (encryptedFile.exists()) {
                         file = encryptedFile;

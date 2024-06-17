@@ -58,14 +58,34 @@ public class DocumentObject {
                 h = photoSize.h;
             }
             if (photoPathSize != null && w != 0 && h != 0) {
-                SvgHelper.SvgDrawable pathThumb = SvgHelper.getDrawableByPath(SvgHelper.decompress(photoPathSize.bytes), w, h);
+                SvgHelper.SvgDrawable pathThumb = SvgHelper.getDrawableByPath(photoPathSize.svgPath, w, h);
                 if (pathThumb != null) {
-                    pathThumb.setupGradient(colorKey, alpha);
+                    pathThumb.setupGradient(colorKey, alpha, false);
                 }
                 return pathThumb;
             }
         }
         return null;
+    }
+
+    public static SvgHelper.SvgDrawable getCircleThumb(float radius, String colorKey, float alpha) {
+        return getCircleThumb(radius, colorKey, null, alpha);
+    }
+
+    public static SvgHelper.SvgDrawable getCircleThumb(float radius, String colorKey, Theme.ResourcesProvider resourcesProvider, float alpha) {
+        try {
+            SvgHelper.SvgDrawable drawable = new SvgHelper.SvgDrawable();
+            SvgHelper.Circle circle = new SvgHelper.Circle(256, 256, radius * 512);
+            drawable.commands.add(circle);
+            drawable.paints.put(circle, new Paint(Paint.ANTI_ALIAS_FLAG));
+            drawable.width = 512;
+            drawable.height = 512;
+            drawable.setupGradient(colorKey, alpha, false);
+            return drawable;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
     }
 
     public static SvgHelper.SvgDrawable getSvgThumb(TLRPC.Document document, String colorKey, float alpha) {
@@ -81,7 +101,7 @@ public class DocumentObject {
         drawable.paints.put(path, new Paint(Paint.ANTI_ALIAS_FLAG));
         drawable.width = 512;
         drawable.height = 512;
-        drawable.setupGradient(colorKey, alpha);
+        drawable.setupGradient(colorKey, alpha, false);
         return drawable;
     }
 
@@ -96,20 +116,31 @@ public class DocumentObject {
                 int w = 512, h = 512;
                 for (int a = 0, N = document.attributes.size(); a < N; a++) {
                     TLRPC.DocumentAttribute attribute = document.attributes.get(a);
-                    if (attribute instanceof TLRPC.TL_documentAttributeImageSize) {
+                    if (
+                        attribute instanceof TLRPC.TL_documentAttributeImageSize ||
+                        attribute instanceof TLRPC.TL_documentAttributeVideo
+                    ) {
                         w = attribute.w;
                         h = attribute.h;
                         break;
                     }
                 }
                 if (w != 0 && h != 0) {
-                    pathThumb = SvgHelper.getDrawableByPath(SvgHelper.decompress(size.bytes), (int) (w * zoom), (int) (h * zoom));
+                    pathThumb = SvgHelper.getDrawableByPath(((TLRPC.TL_photoPathSize) size).svgPath, (int) (w * zoom), (int) (h * zoom));
                     if (pathThumb != null) {
-                        pathThumb.setupGradient(colorKey, alpha);
+                        pathThumb.setupGradient(colorKey, alpha, false);
                     }
                 }
                 break;
             }
+        }
+        return pathThumb;
+    }
+
+    public static SvgHelper.SvgDrawable getSvgThumb(int resourceId, String colorKey, float alpha) {
+        SvgHelper.SvgDrawable pathThumb = SvgHelper.getDrawable(resourceId, 0xffff0000);
+        if (pathThumb != null) {
+            pathThumb.setupGradient(colorKey, alpha, false);
         }
         return pathThumb;
     }

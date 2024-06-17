@@ -52,7 +52,7 @@ public class DispatchQueue extends Thread {
             syncLatch.await();
             handler.removeCallbacks(runnable);
         } catch (Exception e) {
-            FileLog.e(e);
+            FileLog.e(e, false);
         }
     }
 
@@ -63,20 +63,20 @@ public class DispatchQueue extends Thread {
                 handler.removeCallbacks(runnables[i]);
             }
         } catch (Exception e) {
-            FileLog.e(e);
+            FileLog.e(e, false);
         }
     }
 
     public boolean postRunnable(Runnable runnable) {
         lastTaskTime = SystemClock.elapsedRealtime();
-        return postRunnable(runnable, 0);
+        return  postRunnable(runnable, 0);
     }
 
     public boolean postRunnable(Runnable runnable, long delay) {
         try {
             syncLatch.await();
         } catch (Exception e) {
-            FileLog.e(e);
+            FileLog.e(e, false);
         }
         if (delay <= 0) {
             return handler.post(runnable);
@@ -90,7 +90,7 @@ public class DispatchQueue extends Thread {
             syncLatch.await();
             handler.removeCallbacksAndMessages(null);
         } catch (Exception e) {
-            FileLog.e(e);
+            FileLog.e(e, false);
         }
     }
 
@@ -109,17 +109,19 @@ public class DispatchQueue extends Thread {
     @Override
     public void run() {
         Looper.prepare();
-        handler = new Handler() {
-            @Override
-            public void handleMessage(Message msg) {
-                DispatchQueue.this.handleMessage(msg);
-            }
-        };
+        handler = new Handler(Looper.myLooper(), msg -> {
+            DispatchQueue.this.handleMessage(msg);
+            return true;
+        });
         syncLatch.countDown();
         Looper.loop();
     }
 
     public boolean isReady() {
         return syncLatch.getCount() == 0;
+    }
+
+    public Handler getHandler() {
+        return handler;
     }
 }

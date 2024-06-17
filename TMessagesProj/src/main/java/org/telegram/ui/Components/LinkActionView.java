@@ -90,6 +90,7 @@ public class LinkActionView extends LinearLayout {
         frameLayout.addView(linkView);
         optionsView = new ImageView(context);
         optionsView.setImageDrawable(ContextCompat.getDrawable(context, R.drawable.ic_ab_other));
+        optionsView.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
         optionsView.setScaleType(ImageView.ScaleType.CENTER);
         frameLayout.addView(optionsView, LayoutHelper.createFrame(40, 48, Gravity.RIGHT | Gravity.CENTER_VERTICAL));
         addView(frameLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 4, 0));
@@ -100,11 +101,12 @@ public class LinkActionView extends LinearLayout {
         copyView = new TextView(context);
         copyView.setGravity(Gravity.CENTER_HORIZONTAL);
         SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder();
-        spannableStringBuilder.append("..").setSpan(new ColoredImageSpan(ContextCompat.getDrawable(context, R.drawable.baseline_content_copy_24), Theme.getColor(Theme.key_chats_actionIcon)), 0, 1, 0);
+        spannableStringBuilder.append("..").setSpan(new ColoredImageSpan(ContextCompat.getDrawable(context, R.drawable.baseline_content_copy_24), Theme.getColor(Theme.key_chats_actionIcon), ColoredImageSpan.ALIGN_DEFAULT), 0, 1, 0);
         spannableStringBuilder.setSpan(new DialogCell.FixedWidthSpan(AndroidUtilities.dp(8)), 1, 2, 0);
         spannableStringBuilder.append(LocaleController.getString("LinkActionCopy", R.string.LinkActionCopy));
         spannableStringBuilder.append(".").setSpan(new DialogCell.FixedWidthSpan(AndroidUtilities.dp(5)), spannableStringBuilder.length() - 1, spannableStringBuilder.length(), 0);
         copyView.setText(spannableStringBuilder);
+        copyView.setContentDescription(LocaleController.getString("LinkActionCopy", R.string.LinkActionCopy));
         copyView.setPadding(AndroidUtilities.dp(10), AndroidUtilities.dp(10), AndroidUtilities.dp(10), AndroidUtilities.dp(10));
         copyView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         copyView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
@@ -114,11 +116,12 @@ public class LinkActionView extends LinearLayout {
         shareView = new TextView(context);
         shareView.setGravity(Gravity.CENTER_HORIZONTAL);
         spannableStringBuilder = new SpannableStringBuilder();
-        spannableStringBuilder.append("..").setSpan(new ColoredImageSpan(ContextCompat.getDrawable(context, R.drawable.baseline_forward_24), Theme.getColor(Theme.key_chats_actionIcon)), 0, 1, 0);
+        spannableStringBuilder.append("..").setSpan(new ColoredImageSpan(ContextCompat.getDrawable(context, R.drawable.baseline_forward_24), Theme.getColor(Theme.key_chats_actionIcon), ColoredImageSpan.ALIGN_DEFAULT), 0, 1, 0);
         spannableStringBuilder.setSpan(new DialogCell.FixedWidthSpan(AndroidUtilities.dp(8)), 1, 2, 0);
         spannableStringBuilder.append(LocaleController.getString("LinkActionShare", R.string.LinkActionShare));
         spannableStringBuilder.append(".").setSpan(new DialogCell.FixedWidthSpan(AndroidUtilities.dp(5)), spannableStringBuilder.length() - 1, spannableStringBuilder.length(), 0);
         shareView.setText(spannableStringBuilder);
+        shareView.setContentDescription(LocaleController.getString("LinkActionShare", R.string.LinkActionShare));
         shareView.setPadding(AndroidUtilities.dp(10), AndroidUtilities.dp(10), AndroidUtilities.dp(10), AndroidUtilities.dp(10));
 
         shareView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
@@ -217,7 +220,7 @@ public class LinkActionView extends LinearLayout {
             }
 
             subItem = new ActionBarMenuSubItem(context, true, false);
-            subItem.setTextAndIcon(LocaleController.getString("GetQRCode", R.string.GetQRCode), R.drawable.msg_qrcode);
+            subItem.setTextAndIcon(LocaleController.getString("GetQRCode", R.string.GetQRCode), R.drawable.wallet_qr);
             layout.addView(subItem, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
             subItem.setOnClickListener(view12 -> {
                 showQrCode();
@@ -238,7 +241,7 @@ public class LinkActionView extends LinearLayout {
 
             ViewGroup container;
             if (bottomSheet == null) {
-                container = fragment.getParentLayout();
+                container = (FrameLayout) fragment.getParentLayout().getOverlayContainerView();
             } else {
                 container = bottomSheet.getContainer();
             }
@@ -341,6 +344,9 @@ public class LinkActionView extends LinearLayout {
             if (v instanceof ScrollView) {
                 y -= v.getScrollY();
             }
+            if (!(v.getParent() instanceof View)) {
+                break;
+            }
             v = (View) v.getParent();
             if (!(v instanceof ViewGroup)) {
                 return;
@@ -353,13 +359,14 @@ public class LinkActionView extends LinearLayout {
     }
 
     private void showQrCode() {
-        qrCodeBottomSheet = new QRCodeBottomSheet(getContext(), link, isChannel ? LocaleController.getString("QRCodeLinkHelpChannel", R.string.QRCodeLinkHelpChannel) : LocaleController.getString("QRCodeLinkHelpGroup", R.string.QRCodeLinkHelpGroup)) {
+        qrCodeBottomSheet = new QRCodeBottomSheet(getContext(), LocaleController.getString("InviteByQRCode", R.string.InviteByQRCode), link, isChannel ? LocaleController.getString("QRCodeLinkHelpChannel", R.string.QRCodeLinkHelpChannel) : LocaleController.getString("QRCodeLinkHelpGroup", R.string.QRCodeLinkHelpGroup), false) {
             @Override
             public void dismiss() {
                 super.dismiss();
                 qrCodeBottomSheet = null;
             }
         };
+        qrCodeBottomSheet.setCenterAnimation(R.raw.qr_code_logo);
         qrCodeBottomSheet.show();
         if (actionBarPopupWindow != null) {
             actionBarPopupWindow.dismiss();

@@ -78,7 +78,7 @@ class FeedRemoteViewsFactory implements RemoteViewsService.RemoteViewsFactory, N
         String name;
 
         RemoteViews rv = new RemoteViews(mContext.getPackageName(), R.layout.feed_widget_item);
-        if (messageObject.type == 0) {
+        if (messageObject.type == MessageObject.TYPE_TEXT) {
             rv.setTextViewText(R.id.feed_widget_item_text, messageObject.messageText);
             rv.setViewVisibility(R.id.feed_widget_item_text, View.VISIBLE);
         } else {
@@ -94,10 +94,10 @@ class FeedRemoteViewsFactory implements RemoteViewsService.RemoteViewsFactory, N
             rv.setViewVisibility(R.id.feed_widget_item_image, View.GONE);
         } else {
             TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(messageObject.photoThumbs, AndroidUtilities.getPhotoSize());
-            File f = FileLoader.getPathToAttach(size);
+            File f = FileLoader.getInstance(UserConfig.selectedAccount).getPathToAttach(size);
             if (f.exists()) {
                 rv.setViewVisibility(R.id.feed_widget_item_image, View.VISIBLE);
-                Uri uri = FileProvider.getUriForFile(mContext, BuildConfig.APPLICATION_ID + ".provider", f);
+                Uri uri = FileProvider.getUriForFile(mContext, ApplicationLoader.getApplicationId() + ".provider", f);
                 grantUriAccessToWidget(mContext, uri);
                 rv.setImageViewUri(R.id.feed_widget_item_image, uri);
             } else {
@@ -143,7 +143,7 @@ class FeedRemoteViewsFactory implements RemoteViewsService.RemoteViewsFactory, N
             if (classGuid == 0) {
                 classGuid = ConnectionsManager.generateClassGuid();
             }
-            accountInstance.getMessagesController().loadMessages(dialogId, 0, false, 20, 0, 0, true, 0, classGuid, 0, 0, 0, 0, 0, 1);
+            accountInstance.getMessagesController().loadMessages(dialogId, 0, false, 20, 0, 0, true, 0, classGuid, 0, 0, 0, 0, 0, 1, false);
         });
         try {
             countDownLatch.await();

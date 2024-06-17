@@ -327,7 +327,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
                 }
                 cellFlickerDrawable.setParentWidth(getMeasuredWidth());
                 AndroidUtilities.rectTmp.set(0, 0, getMeasuredWidth(), getMeasuredHeight());
-                cellFlickerDrawable.draw(canvas, AndroidUtilities.rectTmp, AndroidUtilities.dp(4));
+                cellFlickerDrawable.draw(canvas, AndroidUtilities.rectTmp, AndroidUtilities.dp(4), null);
                 invalidate();
             }
 
@@ -370,7 +370,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
             }
             startPressed = true;
 
-            AlertDialog loaderDialog = new AlertDialog(v.getContext(), 3);
+            AlertDialog loaderDialog = new AlertDialog(v.getContext(), AlertDialog.ALERT_TYPE_SPINNER);
             loaderDialog.setCanCancel(false);
             loaderDialog.showDelayed(1000);
 
@@ -527,7 +527,7 @@ public class IntroActivity extends BaseFragment implements NotificationCenter.No
     }
 
     @Override
-    protected AnimatorSet onCustomTransitionAnimation(boolean isOpen, Runnable callback) {
+    public AnimatorSet onCustomTransitionAnimation(boolean isOpen, Runnable callback) {
         if (isOnLogout) {
             AnimatorSet set = new AnimatorSet().setDuration(50);
             set.playTogether(ValueAnimator.ofFloat());

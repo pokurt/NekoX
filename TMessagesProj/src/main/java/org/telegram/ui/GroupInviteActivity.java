@@ -42,7 +42,7 @@ import org.telegram.ui.Components.RecyclerListView;
 
 import java.util.ArrayList;
 
-import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.QrUtil;
 
 public class GroupInviteActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
@@ -90,6 +90,7 @@ public class GroupInviteActivity extends BaseFragment implements NotificationCen
 
     @Override
     public void onFragmentDestroy() {
+        super.onFragmentDestroy();
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.chatInfoDidLoad);
     }
 
@@ -155,7 +156,7 @@ public class GroupInviteActivity extends BaseFragment implements NotificationCen
                 if (invite == null) {
                     return;
                 }
-                ProxyUtil.showQrDialog(getParentActivity(),invite.link);
+                QrUtil.showQrDialog(getParentActivity(),invite.link);
             } else if (position == revokeLinkRow) {
                 AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
                 builder.setMessage(LocaleController.getString("RevokeAlert", R.string.RevokeAlert));

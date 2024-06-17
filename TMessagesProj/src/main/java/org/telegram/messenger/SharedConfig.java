@@ -10,6 +10,7 @@ package org.telegram.messenger;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.Dialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -18,7 +19,7 @@ import android.os.Build;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.Base64;
-import android.util.SparseArray;
+import android.webkit.WebView;
 
 import androidx.annotation.Nullable;
 import androidx.core.content.pm.ShortcutManagerCompat;
@@ -36,8 +37,12 @@ import androidx.annotation.IntDef;
 import org.json.JSONObject;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
+import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Components.SwipeGestureSettingsView;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.LaunchActivity;
 
 import java.io.File;
 import java.io.RandomAccessFile;
@@ -46,6 +51,12 @@ import java.net.Proxy;
 import java.util.Arrays;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.io.UnsupportedEncodingException;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -55,13 +66,6 @@ import java.util.stream.Collectors;
 import cn.hutool.core.util.StrUtil;
 import okhttp3.HttpUrl;
 import tw.nekomimi.nekogram.NekoConfig;
-import tw.nekomimi.nekogram.proxy.ProxyManager;
-import tw.nekomimi.nekogram.proxy.ShadowsocksLoader;
-import tw.nekomimi.nekogram.proxy.ShadowsocksRLoader;
-import tw.nekomimi.nekogram.proxy.VmessLoader;
-import tw.nekomimi.nekogram.proxy.WsLoader;
-import tw.nekomimi.nekogram.proxy.SubInfo;
-import tw.nekomimi.nekogram.proxy.SubManager;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.EnvUtil;
 import tw.nekomimi.nekogram.utils.FileUtil;
@@ -71,11 +75,57 @@ import static com.v2ray.ang.V2RayConfig.SSR_PROTOCOL;
 import static com.v2ray.ang.V2RayConfig.SS_PROTOCOL;
 import static com.v2ray.ang.V2RayConfig.WSS_PROTOCOL;
 import static com.v2ray.ang.V2RayConfig.WS_PROTOCOL;
+import java.util.List;
 import java.util.Locale;
 
 public class SharedConfig {
+    /**
+     * V2: Ping and check time serialized
+     */
+    private final static int PROXY_SCHEMA_V2 = 2;
+    private final static int PROXY_CURRENT_SCHEMA_VERSION = PROXY_SCHEMA_V2;
+
     public final static int PASSCODE_TYPE_PIN = 0,
             PASSCODE_TYPE_PASSWORD = 1;
+    private static int legacyDevicePerformanceClass = -1;
+
+    public static boolean loopStickers() {
+        return LiteMode.isEnabled(LiteMode.FLAG_ANIMATED_STICKERS_CHAT);
+    }
+
+    public static boolean readOnlyStorageDirAlertShowed;
+
+    public static void checkSdCard(File file) {
+        if (file == null || SharedConfig.storageCacheDir == null || readOnlyStorageDirAlertShowed) {
+            return;
+        }
+        if (file.getPath().startsWith(SharedConfig.storageCacheDir)) {
+            AndroidUtilities.runOnUIThread(() -> {
+                if (readOnlyStorageDirAlertShowed) {
+                    return;
+                }
+                BaseFragment fragment = LaunchActivity.getLastFragment();
+                if (fragment != null && fragment.getParentActivity() != null) {
+                    SharedConfig.storageCacheDir = null;
+                    SharedConfig.saveConfig();
+                    ImageLoader.getInstance().checkMediaPaths(() -> {
+
+                    });
+
+                    readOnlyStorageDirAlertShowed = true;
+                    AlertDialog.Builder dialog = new AlertDialog.Builder(fragment.getParentActivity());
+                    dialog.setTitle(LocaleController.getString("SdCardError", R.string.SdCardError));
+                    dialog.setSubtitle(LocaleController.getString("SdCardErrorDescription", R.string.SdCardErrorDescription));
+                    dialog.setPositiveButton(LocaleController.getString("DoNotUseSDCard", R.string.DoNotUseSDCard), (dialog1, which) -> {
+
+                    });
+                    Dialog dialogFinal = dialog.create();
+                    dialogFinal.setCanceledOnTouchOutside(false);
+                    dialogFinal.show();
+                }
+            });
+        }
+    }
 
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({
@@ -84,6 +134,12 @@ public class SharedConfig {
     })
     public @interface PasscodeType {}
 
+    public final static int SAVE_TO_GALLERY_FLAG_PEER = 1;
+    public final static int SAVE_TO_GALLERY_FLAG_GROUP = 2;
+    public final static int SAVE_TO_GALLERY_FLAG_CHANNELS = 4;
+
+    @PushListenerController.PushType
+    public static int pushType = PushListenerController.PUSH_TYPE_FIREBASE;
     public static String pushString = "";
     public static String pushStringStatus = "";
     public static long pushStringGetTimeStart;
@@ -111,8 +167,8 @@ public class SharedConfig {
     public static boolean useFingerprint = true;
     public static String lastUpdateVersion;
     public static int suggestStickers;
-    public static boolean loopStickers;
-    public static int keepMedia = 2;
+    public static boolean suggestAnimatedEmoji;
+    public static int keepMedia = CacheByChatsController.KEEP_MEDIA_ONE_MONTH; //deprecated
     public static int lastKeepMediaCheckTime;
     public static int lastLogsCheckTime;
     public static int searchMessagesAsListHintShows;
@@ -123,6 +179,9 @@ public class SharedConfig {
     public static boolean searchMessagesAsListUsed;
     public static boolean stickersReorderingHintUsed;
     public static boolean disableVoiceAudioEffects;
+    public static boolean forceDisableTabletMode;
+    public static boolean updateStickersOrderOnSend = true;
+    public static boolean bigCameraForRound;
     private static int lastLocalId = -210000;
 
     public static String storageCacheDir;
@@ -135,12 +194,12 @@ public class SharedConfig {
     private static final Object sync = new Object();
     private static final Object localIdSync = new Object();
 
-    public static boolean saveToGallery;
+//    public static int saveToGalleryFlags;
     public static int mapPreviewType = 2;
     public static boolean chatBubbles = Build.VERSION.SDK_INT >= 30;
-    public static boolean autoplayGifs = true;
-    public static boolean autoplayVideo = true;
     public static boolean raiseToSpeak = false;
+    public static boolean raiseToListen = true;
+    public static boolean recordViaSco = false;
     public static boolean customTabs = true;
     public static boolean directShare = true;
     public static boolean inappCamera = true;
@@ -150,12 +209,11 @@ public class SharedConfig {
     public static boolean streamAllVideo = false;
     public static boolean streamMkv = false;
     public static boolean saveStreamMedia = true;
-    public static boolean smoothKeyboard = true;
-    public static boolean pauseMusicOnRecord = true;
-    public static boolean chatBlur = true;
+    public static boolean pauseMusicOnRecord = false;
+    public static boolean pauseMusicOnMedia = false;
     public static boolean noiseSupression;
-    public static boolean noStatusBar = true;
-    public static boolean forceRtmpStream;
+    public static final boolean noStatusBar = true;
+    public static boolean debugWebView;
     public static boolean sortContactsByName;
     public static boolean sortFilesByName;
     public static boolean shuffleMusic;
@@ -165,8 +223,11 @@ public class SharedConfig {
     public static int repeatMode;
     public static boolean allowBigEmoji;
     public static int fontSize = 12;
+    public static boolean fontSizeIsDefault;
     public static int bubbleRadius = 3;
     public static int ivFontSize = 12;
+    public static boolean proxyRotationEnabled;
+    public static int proxyRotationTimeout;
     public static int messageSeenHintCount;
     public static int emojiInteractionsHintCount;
     public static int dayNightThemeSwitchHintCount;
@@ -174,7 +235,13 @@ public class SharedConfig {
     public static TLRPC.TL_help_appUpdate pendingAppUpdate;
     public static int pendingAppUpdateBuildVersion;
     public static long lastUpdateCheckTime;
+
+    public static boolean hasEmailLogin;
+
+    @PerformanceClass
     private static int devicePerformanceClass;
+    @PerformanceClass
+    private static int overrideDevicePerformanceClass;
 
     public static boolean drawDialogIcons;
     public static boolean useThreeLinesLayout;
@@ -187,8 +254,56 @@ public class SharedConfig {
     public static int fastScrollHintCount = 3;
     public static boolean dontAskManageStorage;
 
+    public static boolean translateChats = true;
+
     public static CopyOnWriteArraySet<Integer> activeAccounts;
     public static int loginingAccount = -1;
+
+    public static boolean isFloatingDebugActive;
+    public static LiteMode liteMode;
+
+    private static final int[] LOW_SOC = {
+            -1775228513, // EXYNOS 850
+            802464304,  // EXYNOS 7872
+            802464333,  // EXYNOS 7880
+            802464302,  // EXYNOS 7870
+            2067362118, // MSM8953
+            2067362060, // MSM8937
+            2067362084, // MSM8940
+            2067362241, // MSM8992
+            2067362117, // MSM8952
+            2067361998, // MSM8917
+            -1853602818 // SDM439
+    };
+
+    private static final int[] LOW_DEVICES = {
+            1903542002, // XIAOMI NIKEL (Redmi Note 4)
+            1904553494, // XIAOMI OLIVE (Redmi 8)
+            1616144535, // OPPO CPH2273 (Oppo A54s)
+            -713271737, // OPPO OP4F2F (Oppo A54)
+            -1394191140, // SAMSUNG A12 (Galaxy A12)
+            -270252297, // SAMSUNG A12S (Galaxy A12)
+            -270251367, // SAMSUNG A21S (Galaxy A21s)
+            -270252359  // SAMSUNG A10S (Galaxy A10s)
+    };
+
+    private static final int[] AVERAGE_DEVICES = {
+            812981419, // XIAOMI ANGELICA (Redmi 9C)
+            -993913431 // XIAOMI DANDELION (Redmi 9A)
+    };
+
+    private static final int[] HIGH_DEVICES = {
+            1908570923, // XIAOMI SWEET (Redmi Note 10 Pro)
+            -980514379, // XIAOMI SECRET (Redmi Note 10S)
+            577463889, // XIAOMI JOYEUSE (Redmi Note 9 Pro)
+            1764745014, // XIAOMI BEGONIA (Redmi Note 8 Pro)
+            1908524435, // XIAOMI SURYA (Poco X3 NFC)
+            -215787089, // XIAOMI KAMA (Poco X3)
+            -215458996, // XIAOMI VAYU (Poco X3 Pro)
+            -1394179578, // SAMSUNG M21
+            220599115, // SAMSUNG J6LTE
+            1737652784 // SAMSUNG J6PRIMELTE
+    };
 
     static {
         loadConfig();
@@ -234,92 +349,52 @@ public class SharedConfig {
             secret = "";
         }
 
-        public ProxyInfo(String a, int p, String u, String pw, String s) {
-            address = a;
-            port = p;
-            username = u;
-            password = pw;
-            secret = s;
-            if (address == null) {
-                address = "";
+        public ProxyInfo(String address, int port, String username, String password, String secret) {
+            this.address = address;
+            this.port = port;
+            this.username = username;
+            this.password = password;
+            this.secret = secret;
+            if (this.address == null) {
+                this.address = "";
             }
-            if (password == null) {
-                password = "";
+            if (this.password == null) {
+                this.password = "";
             }
-            if (username == null) {
-                username = "";
+            if (this.username == null) {
+                this.username = "";
             }
-            if (secret == null) {
-                secret = "";
+            if (this.secret == null) {
+                this.secret = "";
             }
         }
 
         public String getAddress() {
-
             return address + ":" + port;
-
         }
 
         public String getType() {
-
             if (!StrUtil.isBlank(secret)) {
-
                 return "MTProto";
-
             } else {
-
                 return "Socks5";
-
             }
-
         }
 
         public String getTitle() {
-
             StringBuilder builder = new StringBuilder();
-
-            builder.append("[ ");
-
-            if (subId != 0L) {
-
-                try {
-
-                    builder.append(SubManager.getSubList().find(ObjectFilters.eq("id", subId)).firstOrDefault().displayName());
-
-                } catch (Exception e) {
-
-                    builder.append("Unknown");
-
-                }
-
-            } else {
-
-                builder.append(getType());
-
-            }
-
-            builder.append(" ] ");
-
             if (StrUtil.isBlank(getRemarks())) {
-
                 builder.append(getAddress());
-
             } else {
-
                 builder.append(getRemarks());
-
             }
-
             return builder.toString();
-
         }
 
         private String remarks;
 
         public String getRemarks() {
-
             return remarks;
-
         }
 
         public void setRemarks(String remarks) {
@@ -330,37 +405,24 @@ public class SharedConfig {
         }
 
         public String toUrl() {
-
             HttpUrl.Builder builder = HttpUrl.parse(StrUtil.isBlank(secret) ?
                     "https://t.me/socks" : "https://t.me/proxy").newBuilder()
                     .addQueryParameter("server", address)
                     .addQueryParameter("port", port + "");
-
             if (!StrUtil.isBlank(secret)) {
-
                 builder.addQueryParameter("secret", secret);
-
             } else {
-
                 builder.addQueryParameter("user", username)
                         .addQueryParameter("pass", password);
-
             }
-
             if (!StrUtil.isBlank(remarks)) {
-
                 builder.fragment(Utils.INSTANCE.urlEncode(remarks));
-
             }
-
             return builder.toString();
-
         }
 
         public static ProxyInfo fromUrl(String url) {
-
             Uri lnk = Uri.parse(url);
-
             if (lnk == null) throw new IllegalArgumentException(url);
 
             ProxyInfo info = new ProxyInfo(lnk.getQueryParameter("server"),
@@ -370,9 +432,7 @@ public class SharedConfig {
                     lnk.getQueryParameter("secret"));
 
             if (StrUtil.isNotBlank(lnk.getFragment())) {
-
                 info.setRemarks(lnk.getFragment());
-
             }
 
             return info;
@@ -380,16 +440,12 @@ public class SharedConfig {
         }
 
         public JSONObject toJsonInternal() throws JSONException {
-
             JSONObject obj = new JSONObject();
-
             if (!StrUtil.isBlank(remarks)) {
                 obj.put("remarks", remarks);
             }
-
-            if (group != 0) {
+            if (group != 0)
                 obj.put("group", group);
-            }
 
             obj.put("address", address);
             obj.put("port", port);
@@ -407,102 +463,44 @@ public class SharedConfig {
             }
 
             return obj;
-
         }
 
         public static ProxyInfo fromJson(JSONObject obj) {
-
             ProxyInfo info;
-
             switch (obj.optString("type", "null")) {
-
                 case "socks5": {
-
                     info = new ProxyInfo();
-
                     info.group = obj.optInt("group", 0);
                     info.address = obj.optString("address", "");
                     info.port = obj.optInt("port", 443);
                     info.username = obj.optString("username", "");
                     info.password = obj.optString("password", "");
-
                     info.remarks = obj.optString("remarks");
-
                     if (StrUtil.isBlank(info.remarks)) info.remarks = null;
-
                     info.group = obj.optInt("group", 0);
-
                     break;
-
                 }
 
                 case "mtproto": {
-
                     info = new ProxyInfo();
-
                     info.address = obj.optString("address", "");
                     info.port = obj.optInt("port", 443);
                     info.secret = obj.optString("secret", "");
-
                     info.remarks = obj.optString("remarks");
-
                     if (StrUtil.isBlank(info.remarks)) info.remarks = null;
-
                     info.group = obj.optInt("group", 0);
-
                     break;
-
                 }
-
-                case "vmess": {
-
-                    info = new VmessProxy(obj.optString("link"));
-
-                    break;
-
-                }
-
-                case "shadowsocks": {
-
-                    info = new ShadowsocksProxy(obj.optString("link"));
-
-                    break;
-
-                }
-
-                case "shadowsocksr": {
-
-                    info = new ShadowsocksRProxy(obj.optString("link"));
-
-                    break;
-
-                }
-
-                case "ws": {
-
-                    info = new WsProxy(obj.optString("link"));
-
-                    break;
-
-                }
-
                 default: {
-
                     throw new IllegalStateException("invalid proxy type " + obj.optString("type", "null"));
-
                 }
-
             }
-
             return info;
-
         }
 
         @Override
         public int hashCode() {
-
             return (address + port + username + password + secret).hashCode();
-
         }
 
         @Override
@@ -511,548 +509,22 @@ public class SharedConfig {
         }
     }
 
-    public abstract static class ExternalSocks5Proxy extends ProxyInfo {
-
-        public ExternalSocks5Proxy() {
-
-            address = "127.0.0.1";
-            username = "";
-            password = "";
-            secret = "";
-
-        }
-
-        public abstract boolean isStarted();
-
-        public abstract void start();
-
-        public abstract void stop();
-
-        @Override
-        public abstract String getAddress();
-
-        @Override
-        public abstract String toUrl();
-
-        @Override
-        public abstract String getRemarks();
-
-        @Override
-        public abstract void setRemarks(String remarks);
-
-        @Override
-        public abstract String getType();
-
-        @Override
-        public abstract JSONObject toJsonInternal() throws JSONException;
-
-    }
-
-    public static class VmessProxy extends ExternalSocks5Proxy {
-
-        public AngConfig.VmessBean bean;
-        public VmessLoader loader;
-
-        {
-
-            if (BuildVars.isMini) {
-
-                throw new RuntimeException(LocaleController.getString("MiniVersionAlert", R.string.MiniVersionAlert));
-
-            }
-
-        }
-
-        public VmessProxy(String vmessLink) {
-
-            this(VmessLoader.parseVmessLink(vmessLink));
-
-        }
-
-        public VmessProxy(AngConfig.VmessBean bean) {
-
-            this.bean = bean;
-
-        }
-
-        @Override
-        public String getAddress() {
-            return bean.getAddress() + ":" + bean.getPort();
-        }
-
-        @Override
-        public boolean isStarted() {
-
-            return loader != null;
-
-        }
-
-        @Override
-        public void start() {
-
-            if (loader != null) return;
-
-            VmessLoader loader = new VmessLoader();
-
-            try {
-
-                loader.initConfig(bean);
-
-                port = loader.start();
-
-                this.loader = loader;
-
-                if (SharedConfig.proxyEnabled && SharedConfig.currentProxy == this) {
-
-                    ConnectionsManager.setProxySettings(true, address, port, username, password, secret);
-
-                }
-
-            } catch (Exception e) {
-
-                FileLog.e(e);
-
-                AlertUtil.showToast(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
-
-            }
-
-        }
-
-        @Override
-        public void stop() {
-
-            if (loader != null) {
-
-                VmessLoader loader = this.loader;
-
-                loader.stop();
-
-                this.loader = null;
-
-            }
-
-        }
-
-        @Override
-        public String toUrl() {
-            return bean.toString();
-        }
-
-        @Override
-        public String getRemarks() {
-            return bean.getRemarks();
-        }
-
-        @Override
-        public void setRemarks(String remarks) {
-            bean.setRemarks(remarks);
-        }
-
-        @Override
-        public String getType() {
-
-            if (bean.getConfigType() == V2RayConfig.EConfigType.Trojan) {
-
-                return "Trojan";
-
-            } else {
-
-                return "Vmess";
-
-            }
-
-        }
-
-        @Override
-        public JSONObject toJsonInternal() throws JSONException {
-
-            JSONObject obj = new JSONObject();
-            obj.put("type", "vmess");
-            obj.put("link", toUrl());
-            return obj;
-
-        }
-
-        @Override
-        public int hashCode() {
-            return (bean.getAddress() + bean.getPort() + bean.getId() + bean.getNetwork() + bean.getPath()).hashCode();
-        }
-
-        @Override
-        public boolean equals(@Nullable Object obj) {
-            return super.equals(obj) || (obj instanceof VmessProxy && bean.equals(((VmessProxy) obj).bean));
-        }
-
-    }
-
-    public static class ShadowsocksProxy extends ExternalSocks5Proxy {
-
-        public ShadowsocksLoader.Bean bean;
-        public ShadowsocksLoader loader;
-
-        public ShadowsocksProxy(String ssLink) {
-
-            this(ShadowsocksLoader.Bean.Companion.parse(ssLink));
-
-        }
-
-        public ShadowsocksProxy(ShadowsocksLoader.Bean bean) {
-
-            this.bean = bean;
-
-            if (BuildVars.isMini) {
-
-                throw new RuntimeException(LocaleController.getString("MiniVersionAlert", R.string.MiniVersionAlert));
-
-            }
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-
-                throw new RuntimeException(LocaleController.getString("MinApi21Required", R.string.MinApi21Required));
-
-            }
-
-        }
-
-        @Override
-        public String getAddress() {
-            return bean.getHost() + ":" + bean.getRemotePort();
-        }
-
-        @Override
-        public boolean isStarted() {
-
-            return loader != null;
-
-        }
-
-        @Override
-        public void start() {
-
-            if (loader != null) return;
-
-            port = ProxyManager.mkPort();
-            ShadowsocksLoader loader = new ShadowsocksLoader();
-            loader.initConfig(bean, port);
-
-            loader.start();
-
-            this.loader = loader;
-
-            if (SharedConfig.proxyEnabled && SharedConfig.currentProxy == this) {
-
-                ConnectionsManager.setProxySettings(true, address, port, username, password, secret);
-
-            }
-
-        }
-
-        @Override
-        public void stop() {
-
-            if (loader != null) {
-
-                FileLog.d(getTitle() + " stopped");
-
-                ShadowsocksLoader loader = this.loader;
-
-                loader.stop();
-
-                this.loader = null;
-
-            }
-
-        }
-
-        @Override
-        public String toUrl() {
-            return bean.toString();
-        }
-
-
-        @Override
-        public String getRemarks() {
-            return bean.getRemarks();
-        }
-
-        @Override
-        public void setRemarks(String remarks) {
-            bean.setRemarks(remarks);
-        }
-
-        @Override
-        public String getType() {
-            return "SS";
-        }
-
-        @Override
-        public JSONObject toJsonInternal() throws JSONException {
-
-            JSONObject obj = new JSONObject();
-            obj.put("type", "shadowsocks");
-            obj.put("link", toUrl());
-            return obj;
-
-        }
-
-        @Override
-        public int hashCode() {
-
-            return (bean.getHost() + bean.getRemotePort() + bean.getMethod()).hashCode();
-
-        }
-
-        @Override
-        public boolean equals(@Nullable Object obj) {
-            return super.equals(obj) || (obj instanceof ShadowsocksProxy && bean.equals(((ShadowsocksProxy) obj).bean));
-        }
-
-    }
-
-    public static class ShadowsocksRProxy extends ExternalSocks5Proxy {
-
-        public ShadowsocksRLoader.Bean bean;
-        public ShadowsocksRLoader loader;
-
-        public ShadowsocksRProxy(String ssLink) {
-
-            this(ShadowsocksRLoader.Bean.Companion.parse(ssLink));
-
-        }
-
-        public ShadowsocksRProxy(ShadowsocksRLoader.Bean bean) {
-
-            this.bean = bean;
-
-            if (BuildVars.isMini) {
-
-                throw new RuntimeException(LocaleController.getString("MiniVersionAlert", R.string.MiniVersionAlert));
-
-            }
-
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-
-                throw new RuntimeException(LocaleController.getString("MinApi21Required", R.string.MinApi21Required));
-
-            }
-
-        }
-
-        @Override
-        public String getAddress() {
-            return bean.getHost() + ":" + bean.getRemotePort();
-        }
-
-        @Override
-        public boolean isStarted() {
-
-            return loader != null;
-
-        }
-
-        @Override
-        public void start() {
-
-            if (loader != null) return;
-
-            port = ProxyManager.mkPort();
-            ShadowsocksRLoader loader = new ShadowsocksRLoader();
-            loader.initConfig(bean, port);
-
-            loader.start();
-
-            this.loader = loader;
-
-            if (SharedConfig.proxyEnabled && SharedConfig.currentProxy == this) {
-
-                ConnectionsManager.setProxySettings(true, address, port, username, password, secret);
-
-            }
-
-        }
-
-        @Override
-        public void stop() {
-
-            if (loader != null) {
-
-                ShadowsocksRLoader loader = this.loader;
-
-                this.loader = null;
-
-                loader.stop();
-
-            }
-
-        }
-
-        @Override
-        public String toUrl() {
-            return bean.toString();
-        }
-
-        @Override
-        public String getRemarks() {
-            return bean.getRemarks();
-        }
-
-        @Override
-        public void setRemarks(String remarks) {
-            bean.setRemarks(remarks);
-        }
-
-        @Override
-        public String getType() {
-            return "SSR";
-        }
-
-        @Override
-        public JSONObject toJsonInternal() throws JSONException {
-
-            JSONObject obj = new JSONObject();
-            obj.put("type", "shadowsocksr");
-            obj.put("link", toUrl());
-            return obj;
-
-        }
-
-        @Override
-        public int hashCode() {
-
-            return (bean.getHost() + bean.getRemotePort() + bean.getMethod() + bean.getProtocol() + bean.getProtocol_param() + bean.getObfs() + bean.getObfs_param()).hashCode();
-
-        }
-
-        @Override
-        public boolean equals(@Nullable Object obj) {
-            return super.equals(obj) || (obj instanceof ShadowsocksRProxy && bean.equals(((ShadowsocksRProxy) obj).bean));
-        }
-
-    }
-
-    public static class WsProxy extends ExternalSocks5Proxy {
-
-        public WsLoader.Bean bean;
-        public WsLoader loader;
-
-        public WsProxy(String url) {
-            this(WsLoader.Companion.parse(url));
-        }
-
-        public WsProxy(WsLoader.Bean bean) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                throw new RuntimeException(LocaleController.getString("MinApi21Required", R.string.MinApi21Required));
-            }
-
-            this.bean = bean;
-        }
-
-        @Override
-        public boolean isStarted() {
-            return loader != null;
-        }
-
-        @Override
-        public void start() {
-            if (loader != null) return;
-            synchronized (this) {
-                loader = new WsLoader();
-                port = ProxyManager.mkPort();
-                loader.init(bean, port);
-                loader.start();
-                if (SharedConfig.proxyEnabled && SharedConfig.currentProxy == this) {
-                    ConnectionsManager.setProxySettings(true, address, port, username, password, secret);
-                }
-            }
-        }
-
-        @Override
-        public void stop() {
-            if (loader == null) return;
-            ConnectionsManager.setProxySettings(false, address, port, username, password, secret);
-            UIUtil.runOnIoDispatcher(() -> {
-                synchronized (this) {
-                    if (loader == null)
-                        return;
-                    loader.stop();
-                    loader = null;
-                }
-            });
-        }
-
-        @Override
-        public String getAddress() {
-            return bean.getServer();
-        }
-
-        @Override
-        public String toUrl() {
-            return bean.toString();
-        }
-
-        @Override
-        public String getRemarks() {
-            return bean.getRemarks();
-        }
-
-        @Override
-        public void setRemarks(String remarks) {
-            bean.setRemarks(remarks);
-        }
-
-        @Override
-        public String getType() {
-            return "WS";
-        }
-
-        @Override
-        public int hashCode() {
-            return bean.hashCode();
-        }
-
-        @Override
-        public JSONObject toJsonInternal() throws JSONException {
-            JSONObject obj = new JSONObject();
-            obj.put("type", "ws");
-            obj.put("link", toUrl());
-            return obj;
-        }
-
-    }
-
     public static LinkedList<ProxyInfo> proxyList = new LinkedList<>();
 
     public static LinkedList<ProxyInfo> getProxyList() {
-
         while (true) {
-
             try {
-
                 return new LinkedList<>(proxyList);
-
             } catch (Exception ignored) {
             }
-
         }
-
     }
 
     private static boolean proxyListLoaded;
     public static ProxyInfo currentProxy;
 
     public static Proxy getActiveSocks5Proxy() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M)
-            return null;
-        // https://stackoverflow.com/questions/36205896/how-to-use-httpurlconnection-over-socks-proxy-on-android
-        // Android did not support socks proxy natively(using HURL) on devices previous than Marshmallow
-        // Hutool use HttpURLConnection too
-        if (!(currentProxy instanceof ExternalSocks5Proxy) || currentProxy instanceof WsProxy)
-            return null;
-        final ExternalSocks5Proxy proxy = (ExternalSocks5Proxy) currentProxy;
-        if (!proxy.isStarted())
-            return null;
-        FileLog.w("Return socks5 proxy: " + currentProxy.toString() + " port:" + currentProxy.port);
-        return new Proxy(Proxy.Type.SOCKS, new InetSocketAddress(currentProxy.address, currentProxy.port));
+        return null;
     }
 
     public static void saveConfig() {
@@ -1074,6 +546,7 @@ public class SharedConfig {
                 editor.putBoolean("useFingerprint", useFingerprint);
                 editor.putBoolean("allowScreenCapture", allowScreenCapture);
                 editor.putString("pushString2", pushString);
+                editor.putInt("pushType", pushType);
                 editor.putBoolean("pushStatSent", pushStatSent);
                 editor.putString("pushAuthKey", pushAuthKey != null ? Base64.encodeToString(pushAuthKey, Base64.DEFAULT) : "");
                 editor.putInt("lastLocalId", lastLocalId);
@@ -1086,6 +559,8 @@ public class SharedConfig {
                 editor.putBoolean("forwardingOptionsHintShown", forwardingOptionsHintShown);
                 editor.putInt("lockRecordAudioVideoHint", lockRecordAudioVideoHint);
                 editor.putString("storageCacheDir", !TextUtils.isEmpty(storageCacheDir) ? storageCacheDir : "");
+                editor.putBoolean("proxyRotationEnabled", proxyRotationEnabled);
+                editor.putInt("proxyRotationTimeout", proxyRotationTimeout);
 
                 if (pendingAppUpdate != null) {
                     try {
@@ -1103,6 +578,12 @@ public class SharedConfig {
                 }
                 editor.putLong("appUpdateCheckTime", lastUpdateCheckTime);
 
+                editor.apply();
+
+                editor = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Context.MODE_PRIVATE).edit();
+                editor.putBoolean("hasEmailLogin", hasEmailLogin);
+                editor.putBoolean("floatingDebugActive", isFloatingDebugActive);
+                editor.putBoolean("record_via_sco", recordViaSco);
                 editor.apply();
             } catch (Exception e) {
                 FileLog.e(e);
@@ -1148,10 +629,13 @@ public class SharedConfig {
             allowScreenCapture = preferences.getBoolean("allowScreenCapture", false);
             lastLocalId = preferences.getInt("lastLocalId", -210000);
             pushString = preferences.getString("pushString2", "");
+            pushType = preferences.getInt("pushType", PushListenerController.PUSH_TYPE_FIREBASE);
             pushStatSent = preferences.getBoolean("pushStatSent", false);
             passportConfigJson = preferences.getString("passportConfigJson", "");
             passportConfigHash = preferences.getInt("passportConfigHash", 0);
             storageCacheDir = preferences.getString("storageCacheDir", null);
+            proxyRotationEnabled = preferences.getBoolean("proxyRotationEnabled", false);
+            proxyRotationTimeout = preferences.getInt("proxyRotationTimeout", ProxyRotationController.DEFAULT_TIMEOUT_INDEX);
             String authKeyString = preferences.getString("pushAuthKey", null);
             if (!TextUtils.isEmpty(authKeyString)) {
                 pushAuthKey = Base64.decode(authKeyString, Base64.DEFAULT);
@@ -1196,7 +680,7 @@ public class SharedConfig {
                     if (updateVersionString == null) {
                         updateVersionString = BuildVars.BUILD_VERSION_STRING;
                     }
-                    if (pendingAppUpdateBuildVersion != updateVersion || pendingAppUpdate.version == null || updateVersionString.compareTo(pendingAppUpdate.version) >= 0) {
+                    if (pendingAppUpdateBuildVersion != updateVersion || pendingAppUpdate.version == null || updateVersionString.compareTo(pendingAppUpdate.version) >= 0 || BuildVars.DEBUG_PRIVATE_VERSION) {
                         pendingAppUpdate = null;
                         AndroidUtilities.runOnUIThread(SharedConfig::saveConfig);
                     }
@@ -1206,32 +690,35 @@ public class SharedConfig {
             }
 
             preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-            saveToGallery = preferences.getBoolean("save_gallery", false);
-            autoplayGifs = preferences.getBoolean("autoplay_gif", true);
-            autoplayVideo = preferences.getBoolean("autoplay_video", true);
+            SaveToGallerySettingsHelper.load(preferences);
             mapPreviewType = preferences.getInt("mapPreviewType", 2);
+            raiseToListen = preferences.getBoolean("raise_to_listen", true);
             raiseToSpeak = preferences.getBoolean("raise_to_speak", false);
+            recordViaSco = preferences.getBoolean("record_via_sco", false);
             customTabs = preferences.getBoolean("custom_tabs", true);
             directShare = preferences.getBoolean("direct_share", true);
             shuffleMusic = preferences.getBoolean("shuffleMusic", false);
             playOrderReversed = !shuffleMusic && preferences.getBoolean("playOrderReversed", false);
             inappCamera = preferences.getBoolean("inappCamera", true);
             hasCameraCache = preferences.contains("cameraCache");
-            roundCamera16to9 = true;//preferences.getBoolean("roundCamera16to9", false);
+            roundCamera16to9 = true;
             repeatMode = preferences.getInt("repeatMode", 0);
             fontSize = preferences.getInt("fons_size", AndroidUtilities.isTablet() ? 14 : 12);
+            fontSizeIsDefault = !preferences.contains("fons_size");
             bubbleRadius = preferences.getInt("bubbleRadius", 3);
             ivFontSize = preferences.getInt("iv_font_size", fontSize);
             allowBigEmoji = preferences.getBoolean("allowBigEmoji", true);
             streamMedia = preferences.getBoolean("streamMedia", true);
             saveStreamMedia = preferences.getBoolean("saveStreamMedia", true);
-            smoothKeyboard = preferences.getBoolean("smoothKeyboard2", true);
             pauseMusicOnRecord = preferences.getBoolean("pauseMusicOnRecord", false);
-            chatBlur = preferences.getBoolean("chatBlur", true);
-            chatBlur = chatBlur || NekoConfig.forceBlurInChat.Bool();
+            pauseMusicOnMedia = preferences.getBoolean("pauseMusicOnMedia", false);
+            forceDisableTabletMode = preferences.getBoolean("forceDisableTabletMode", false);
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
             streamMkv = preferences.getBoolean("streamMkv", false);
             suggestStickers = preferences.getInt("suggestStickers", 0);
+            suggestAnimatedEmoji = preferences.getBoolean("suggestAnimatedEmoji", true);
+            overrideDevicePerformanceClass = preferences.getInt("overrideDevicePerformanceClass", -1);
+            devicePerformanceClass = preferences.getInt("devicePerformanceClass", -1);
             sortContactsByName = preferences.getBoolean("sortContactsByName", false);
             sortFilesByName = preferences.getBoolean("sortFilesByName", false);
             noSoundHintShowed = preferences.getBoolean("noSoundHintShowed", false);
@@ -1239,11 +726,8 @@ public class SharedConfig {
             useThreeLinesLayout = preferences.getBoolean("useThreeLinesLayout", false);
             archiveHidden = preferences.getBoolean("archiveHidden", false);
             distanceSystemType = preferences.getInt("distanceSystemType", 0);
-            devicePerformanceClass = preferences.getInt("devicePerformanceClass", -1);
-            loopStickers = preferences.getBoolean("loopStickers", true);
-            keepMedia = preferences.getInt("keep_media", 2);
-            noStatusBar = NekoConfig.transparentStatusBar.Bool();
-            forceRtmpStream = preferences.getBoolean("forceRtmpStream", false);
+            keepMedia = preferences.getInt("keep_media", CacheByChatsController.KEEP_MEDIA_ONE_MONTH);
+            debugWebView = preferences.getBoolean("debugWebView", false);
             lastKeepMediaCheckTime = preferences.getInt("lastKeepMediaCheckTime", 0);
             lastLogsCheckTime = preferences.getInt("lastLogsCheckTime", 0);
             searchMessagesAsListHintShows = preferences.getInt("searchMessagesAsListHintShows", 0);
@@ -1294,14 +778,33 @@ public class SharedConfig {
             mediaColumnsCount = preferences.getInt("mediaColumnsCount", 3);
             fastScrollHintCount = preferences.getInt("fastScrollHintCount", 3);
             dontAskManageStorage = preferences.getBoolean("dontAskManageStorage", false);
+            hasEmailLogin = preferences.getBoolean("hasEmailLogin", false);
+            isFloatingDebugActive = preferences.getBoolean("floatingDebugActive", false);
+            updateStickersOrderOnSend = preferences.getBoolean("updateStickersOrderOnSend", true);
+            bigCameraForRound = preferences.getBoolean("bigCameraForRound", false);
 
             preferences = ApplicationLoader.applicationContext.getSharedPreferences("Notifications", Activity.MODE_PRIVATE);
             showNotificationsForAllAccounts = preferences.getBoolean("AllAccounts", true);
 
             configLoaded = true;
 
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && debugWebView) {
+                    WebView.setWebContentsDebuggingEnabled(true);
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
         }
 
+    }
+
+    public static void updateTabletConfig() {
+        if (fontSizeIsDefault) {
+            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
+            fontSize = preferences.getInt("fons_size", AndroidUtilities.isTablet() ? 18 : 16);
+            ivFontSize = preferences.getInt("iv_font_size", fontSize);
+        }
     }
 
     public static void increaseBadPasscodeTries() {
@@ -1330,6 +833,14 @@ public class SharedConfig {
             lastUptimeMillis = SystemClock.elapsedRealtime();
         }
         saveConfig();
+    }
+
+    public static boolean isAutoplayVideo() {
+        return LiteMode.isEnabled(LiteMode.FLAG_AUTOPLAY_VIDEOS);
+    }
+
+    public static boolean isAutoplayGifs() {
+        return LiteMode.isEnabled(LiteMode.FLAG_AUTOPLAY_GIFS);
     }
 
     public static boolean isPassportConfigLoaded() {
@@ -1494,7 +1005,7 @@ public class SharedConfig {
         editor.commit();
     }
 
-    public static void removeScheduledOrNoSuoundHint() {
+    public static void removeScheduledOrNoSoundHint() {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
         editor.putInt("scheduledOrNoSoundHintShows", 3);
@@ -1530,6 +1041,13 @@ public class SharedConfig {
         editor.commit();
     }
 
+    public static void toggleUpdateStickersOrderOnSend() {
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("updateStickersOrderOnSend", updateStickersOrderOnSend = !updateStickersOrderOnSend);
+        editor.commit();
+    }
+
     public static void checkLogsToDelete() {
         if (!BuildVars.LOGS_ENABLED) {
             return;
@@ -1542,8 +1060,10 @@ public class SharedConfig {
         Utilities.cacheClearQueue.postRunnable(() -> {
             long currentTime = time - 60 * 60 * 24 * 10;
             try {
-                File sdCard = ApplicationLoader.applicationContext.getExternalFilesDir(null);
-                File dir = new File(sdCard.getAbsolutePath() + "/logs");
+                File dir = AndroidUtilities.getLogsDir();
+                if (dir == null) {
+                    return;
+                }
                 Utilities.clearDir(dir.getAbsolutePath(), 0, currentTime, false);
             } catch (Throwable e) {
                 FileLog.e(e);
@@ -1551,54 +1071,6 @@ public class SharedConfig {
             SharedPreferences preferences = MessagesController.getGlobalMainSettings();
             SharedPreferences.Editor editor = preferences.edit();
             editor.putInt("lastLogsCheckTime", lastLogsCheckTime);
-            editor.commit();
-        });
-    }
-
-    public static void checkKeepMedia() {
-        int time = (int) (System.currentTimeMillis() / 1000);
-        if (Math.abs(time - lastKeepMediaCheckTime) < 60 * 60) {
-            return;
-        }
-        lastKeepMediaCheckTime = time;
-        File cacheDir = FileLoader.checkDirectory(FileLoader.MEDIA_DIR_CACHE);
-        Utilities.cacheClearQueue.postRunnable(() -> {
-            if (keepMedia != 2) {
-                int days;
-                if (keepMedia == 0) {
-                    days = 7;
-                } else if (keepMedia == 1) {
-                    days = 30;
-                } else if (keepMedia == 4) {
-                    days = 1;
-                } else {
-                    days = 3;
-                }
-                long currentTime = time - 60 * 60 * 24 * days;
-                final SparseArray<File> paths = ImageLoader.getInstance().createMediaPaths();
-                for (int a = 0; a < paths.size(); a++) {
-                    if (paths.keyAt(a) == FileLoader.MEDIA_DIR_CACHE) {
-                        continue;
-                    }
-                    try {
-                        Utilities.clearDir(paths.valueAt(a).getAbsolutePath(), 0, currentTime, false);
-                    } catch (Throwable e) {
-                        FileLog.e(e);
-                    }
-                }
-            }
-            File stickersPath = new File(cacheDir, "acache");
-            if (stickersPath.exists()) {
-                long currentTime = time - 60 * 60 * 24;
-                try {
-                    Utilities.clearDir(stickersPath.getAbsolutePath(), 0, currentTime, false);
-                } catch (Throwable e) {
-                    FileLog.e(e);
-                }
-            }
-            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-            SharedPreferences.Editor editor = preferences.edit();
-            editor.putInt("lastKeepMediaCheckTime", lastKeepMediaCheckTime);
             editor.commit();
         });
     }
@@ -1619,29 +1091,19 @@ public class SharedConfig {
         editor.commit();
     }
 
-    public static void toggleForceRTMPStream() {
-        forceRtmpStream = !forceRtmpStream;
+    public static void toggleDebugWebView() {
+        debugWebView = !debugWebView;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(debugWebView);
+        }
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("forceRtmpStream", forceRtmpStream);
+        editor.putBoolean("debugWebView", debugWebView);
         editor.apply();
     }
 
-//    public static void toggleNoStatusBar() {
-//        noStatusBar = !noStatusBar;
-//        noStatusBar |= NekoConfig.transparentStatusBar.Bool();
-//        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-//        SharedPreferences.Editor editor = preferences.edit();
-//        editor.putBoolean("noStatusBar", noStatusBar);
-//        editor.apply();
-//    }
-
     public static void toggleLoopStickers() {
-        loopStickers = !loopStickers;
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("loopStickers", loopStickers);
-        editor.commit();
+        LiteMode.toggleFlag(LiteMode.FLAG_ANIMATED_STICKERS_CHAT);
     }
 
     public static void toggleBigEmoji() {
@@ -1649,6 +1111,14 @@ public class SharedConfig {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
         editor.putBoolean("allowBigEmoji", allowBigEmoji);
+        editor.commit();
+    }
+
+    public static void toggleSuggestAnimatedEmoji() {
+        suggestAnimatedEmoji = !suggestAnimatedEmoji;
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("suggestAnimatedEmoji", suggestAnimatedEmoji);
         editor.commit();
     }
 
@@ -1682,24 +1152,15 @@ public class SharedConfig {
         editor.commit();
     }
 
-    public static void toggleSaveToGallery() {
-        saveToGallery = !saveToGallery;
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("save_gallery", saveToGallery);
-        editor.commit();
-        ImageLoader.getInstance().checkMediaPaths();
-        ImageLoader.getInstance().getCacheOutQueue().postRunnable(() -> {
-            checkSaveToGalleryFiles();
-        });
+    public static void overrideDevicePerformanceClass(int performanceClass) {
+        MessagesController.getGlobalMainSettings().edit().putInt("overrideDevicePerformanceClass", overrideDevicePerformanceClass = performanceClass).remove("lite_mode").commit();
+        if (liteMode != null) {
+            liteMode.loadPreference();
+        }
     }
 
     public static void toggleAutoplayGifs() {
-        autoplayGifs = !autoplayGifs;
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("autoplay_gif", autoplayGifs);
-        editor.commit();
+        LiteMode.toggleFlag(LiteMode.FLAG_AUTOPLAY_GIFS);
     }
 
     public static void setUseThreeLinesLayout(boolean value) {
@@ -1720,11 +1181,7 @@ public class SharedConfig {
     }
 
     public static void toggleAutoplayVideo() {
-        autoplayVideo = !autoplayVideo;
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("autoplay_video", autoplayVideo);
-        editor.commit();
+        LiteMode.toggleFlag(LiteMode.FLAG_AUTOPLAY_VIDEOS);
     }
 
     public static boolean isSecretMapPreviewSet() {
@@ -1751,12 +1208,24 @@ public class SharedConfig {
         editor.commit();
     }
 
-    public static void toogleRaiseToSpeak() {
+    public static void toggleRaiseToSpeak() {
         raiseToSpeak = !raiseToSpeak;
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
         editor.putBoolean("raise_to_speak", raiseToSpeak);
         editor.commit();
+    }
+
+    public static void toggleRaiseToListen() {
+        raiseToListen = !raiseToListen;
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("raise_to_listen", raiseToListen);
+        editor.commit();
+    }
+
+    public static boolean enabledRaiseTo(boolean speak) {
+        return raiseToListen && (!speak || raiseToSpeak);
     }
 
     public static void toggleCustomTabs() {
@@ -1825,14 +1294,6 @@ public class SharedConfig {
         editor.commit();
     }
 
-    public static void toggleSmoothKeyboard() {
-        smoothKeyboard = !smoothKeyboard;
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("smoothKeyboard2", smoothKeyboard);
-        editor.commit();
-    }
-
     public static void setSmoothKeyboard(boolean smoothKeyboard) {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
@@ -1848,12 +1309,23 @@ public class SharedConfig {
         editor.commit();
     }
 
-    public static void toggleChatBlur() {
-        chatBlur = !chatBlur;
-        if (NekoConfig.forceBlurInChat.Bool()) chatBlur = true;
+    public static void togglePauseMusicOnMedia() {
+        pauseMusicOnMedia = !pauseMusicOnMedia;
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         SharedPreferences.Editor editor = preferences.edit();
-        editor.putBoolean("chatBlur", chatBlur);
+        editor.putBoolean("pauseMusicOnMedia", pauseMusicOnMedia);
+        editor.commit();
+    }
+
+    public static void toggleChatBlur() {
+        LiteMode.toggleFlag(LiteMode.FLAG_CHAT_BLUR);
+    }
+
+    public static void toggleForceDisableTabletMode() {
+        forceDisableTabletMode = !forceDisableTabletMode;
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        SharedPreferences.Editor editor = preferences.edit();
+        editor.putBoolean("forceDisableTabletMode", forceDisableTabletMode);
         editor.commit();
     }
 
@@ -1892,68 +1364,25 @@ public class SharedConfig {
     public static boolean proxyEnabled;
 
     public static void setProxyEnable(boolean enable) {
-
         proxyEnabled = enable;
-
-        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-
-        preferences.edit().putBoolean("proxy_enabled", enable).commit();
-
+        MessagesController.getGlobalMainSettings().edit().putBoolean("proxy_enabled", enable).apply();
         ProxyInfo info = currentProxy;
-
         if (info == null) {
-
             info = new ProxyInfo();
-
         }
-
         ProxyInfo finalInfo = info;
-
         UIUtil.runOnIoDispatcher(() -> {
-
-            try {
-
-                if (enable && finalInfo instanceof ExternalSocks5Proxy) {
-
-                    ((ExternalSocks5Proxy) finalInfo).start();
-
-                } else if (!enable && finalInfo instanceof ExternalSocks5Proxy) {
-
-                    ((ExternalSocks5Proxy) finalInfo).stop();
-
-                }
-
-            } catch (Exception e) {
-
-                FileLog.e(e);
-                AlertUtil.showToast(e);
-
-                return;
-
-            }
-
             ConnectionsManager.setProxySettings(enable, finalInfo.address, finalInfo.port, finalInfo.username, finalInfo.password, finalInfo.secret);
-
             UIUtil.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged));
-
         });
-
     }
 
     public static void setCurrentProxy(@Nullable ProxyInfo info) {
-
-        if (currentProxy instanceof ExternalSocks5Proxy && !currentProxy.equals(info)) {
-            ((ExternalSocks5Proxy) currentProxy).stop();
-        }
-
         currentProxy = info;
-
         MessagesController.getGlobalMainSettings().edit()
                 .putInt("current_proxy", info == null ? 0 : info.hashCode())
                 .apply();
-
         setProxyEnable(info != null);
-
     }
 
     public static void reloadProxyList() {
@@ -1971,46 +1400,11 @@ public class SharedConfig {
             return;
         }
 
-        if (!proxyList.isEmpty()) {
-            for (ProxyInfo proxyInfo : getProxyList()) {
-                if (proxyInfo instanceof ExternalSocks5Proxy) {
-                    ((ExternalSocks5Proxy) proxyInfo).stop();
-                }
-            }
-        }
-
         proxyListLoaded = true;
         proxyList.clear();
         currentProxy = null;
 
         int current = MessagesController.getGlobalMainSettings().getInt("current_proxy", 0);
-
-        for (SubInfo subInfo : SubManager.getSubList().find()) {
-            if (!subInfo.enable) continue;
-
-            for (String proxy : subInfo.proxies) {
-                try {
-                    ProxyInfo info = parseProxyInfo(proxy);
-                    info.subId = subInfo.id;
-                    if (info.hashCode() == current) {
-                        currentProxy = info;
-                        if (info instanceof ExternalSocks5Proxy) {
-                            UIUtil.runOnIoDispatcher(() -> {
-                                try {
-                                    ((ExternalSocks5Proxy) info).start();
-                                } catch (Exception e) {
-                                    FileLog.e(e);
-                                    AlertUtil.showToast(e);
-                                }
-                            });
-                        }
-                    }
-                    proxyList.add(info);
-                } catch (Exception e) {
-                    FileLog.d("load sub proxy failed: " + e);
-                }
-            }
-        }
 
         File proxyListFile = new File(ApplicationLoader.applicationContext.getFilesDir().getParentFile(), "nekox/proxy_list.json");
         boolean error = false;
@@ -2027,19 +1421,9 @@ public class SharedConfig {
                         error = true;
                         continue;
                     }
-                    proxyList.add(info);
+                    proxyList.add(0, info);
                     if (info.hashCode() == current) {
                         currentProxy = info;
-                        if (info instanceof ExternalSocks5Proxy) {
-                            UIUtil.runOnIoDispatcher(() -> {
-                                try {
-                                    ((ExternalSocks5Proxy) info).start();
-                                } catch (Exception e) {
-                                    FileLog.e(e);
-                                    AlertUtil.showToast(e);
-                                }
-                            });
-                        }
                     }
                 }
             } catch (Exception ex) {
@@ -2048,84 +1432,24 @@ public class SharedConfig {
         }
 
         if (error) saveProxyList();
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        boolean proxyEnabledValue = preferences.getBoolean("proxy_enabled", false);
+        boolean proxyEnabledValue = MessagesController.getGlobalMainSettings().getBoolean("proxy_enabled", false);
         if (proxyEnabledValue && currentProxy == null) proxyEnabledValue = false;
         proxyEnabled = proxyEnabledValue;
     }
 
-    public static ProxyInfo parseProxyInfo(String url) throws InvalidProxyException {
-        if (url.startsWith(V2RayConfig.VMESS_PROTOCOL) || url.startsWith(V2RayConfig.VMESS1_PROTOCOL) || url.startsWith(V2RayConfig.TROJAN_PROTOCOL)) {
-            try {
-                return new VmessProxy(url);
-            } catch (Exception ex) {
-                throw new InvalidProxyException(ex);
-            }
-        } else if (url.startsWith(SS_PROTOCOL)) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                throw new InvalidProxyException("shadowsocks requires min api 21");
-            }
-            try {
-                return new ShadowsocksProxy(url);
-            } catch (Exception ex) {
-                throw new InvalidProxyException(ex);
-            }
-        } else if (url.startsWith(SSR_PROTOCOL)) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                throw new InvalidProxyException("shadowsocksR requires min api 21");
-            }
-            try {
-                return new ShadowsocksRProxy(url);
-            } catch (Exception ex) {
-                throw new InvalidProxyException(ex);
-            }
-        } else if (url.startsWith(WS_PROTOCOL) || url.startsWith(WSS_PROTOCOL)) {
-            try {
-                return new WsProxy(url);
-            } catch (Exception ex) {
-                throw new InvalidProxyException(ex);
-            }
-        }/* else if (url.startsWith(RB_PROTOCOL)) {
-            try {
-                return new RelayBatonProxy(url);
-            } catch (Exception ex) {
-                throw new InvalidProxyException(ex);
-            }
-        } */
-
-        if (url.startsWith("tg:proxy") ||
-                url.startsWith("tg://proxy") ||
-                url.startsWith("tg:socks") ||
-                url.startsWith("tg://socks") ||
-                url.startsWith("https://t.me/proxy") ||
-                url.startsWith("https://t.me/socks")) {
-            return ProxyInfo.fromUrl(url);
-        }
-        throw new InvalidProxyException();
-    }
-
     public static class InvalidProxyException extends Exception {
-
         public InvalidProxyException() {
         }
-
         public InvalidProxyException(String messsage) {
             super(messsage);
         }
-
         public InvalidProxyException(Throwable cause) {
-
             super(cause);
-
         }
-
     }
-
     public static void saveProxyList() {
         UIUtil.runOnIoDispatcher(() -> {
-
             JSONArray proxyArray = new JSONArray();
-
             for (ProxyInfo info : getProxyList()) {
                 try {
                     JSONObject obj = info.toJsonInternal();
@@ -2137,15 +1461,12 @@ public class SharedConfig {
                     FileLog.e(e);
                 }
             }
-
             File proxyListFile = new File(ApplicationLoader.applicationContext.getFilesDir().getParentFile(), "nekox/proxy_list.json");
-
             try {
                 FileUtil.writeUtf8String(proxyArray.toString(), proxyListFile);
             } catch (Exception e) {
                 FileLog.e(e);
             }
-
         });
     }
 
@@ -2164,8 +1485,11 @@ public class SharedConfig {
         return proxyInfo;
     }
 
-    public static void deleteProxy(ProxyInfo proxyInfo) {
+    public static boolean isProxyEnabled() {
+        return MessagesController.getGlobalMainSettings().getBoolean("proxy_enabled", false) && currentProxy != null;
+    }
 
+    public static void deleteProxy(ProxyInfo proxyInfo) {
         if (currentProxy == proxyInfo) {
             currentProxy = null;
             if (proxyEnabled) {
@@ -2173,31 +1497,15 @@ public class SharedConfig {
             }
         }
         proxyList.remove(proxyInfo);
-        if (proxyInfo.subId != 0) {
-            SubInfo sub = SubManager.getSubList().find(ObjectFilters.eq("id", proxyInfo.subId)).firstOrDefault();
-            try {
-                if (sub.proxies.remove(proxyInfo.toUrl())) {
-                    SubManager.getSubList().update(sub);
-                }
-            } catch (UnsupportedOperationException ignored) {
-            }
-        } else {
-            saveProxyList();
-        }
+        saveProxyList();
     }
 
     public static void deleteAllProxy() {
-
         setCurrentProxy(null);
-
         proxyListLoaded = false;
-
         proxyList.clear();
-
         saveProxyList();
-
         loadProxyList();
-
     }
 
     public static void checkSaveToGalleryFiles() {
@@ -2209,7 +1517,7 @@ public class SharedConfig {
                 File videoPath = new File(telegramPath, "videos");
                 videoPath.mkdirs();
 
-                if (saveToGallery) {
+                if (!BuildVars.NO_SCOPED_STORAGE) {
                     if (imagePath.isDirectory()) {
                         new File(imagePath, ".nomedia").delete();
                     }
@@ -2282,38 +1590,105 @@ public class SharedConfig {
 
     @PerformanceClass
     public static int getDevicePerformanceClass() {
+        if (overrideDevicePerformanceClass != -1) {
+            return overrideDevicePerformanceClass;
+        }
         if (devicePerformanceClass == -1) {
-            int androidVersion = Build.VERSION.SDK_INT;
-            int cpuCount = ConnectionsManager.CPU_COUNT;
-            int memoryClass = ((ActivityManager) ApplicationLoader.applicationContext.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryClass();
-            int totalCpuFreq = 0;
-            int freqResolved = 0;
-            for (int i = 0; i < cpuCount; i++) {
-                try {
-                    RandomAccessFile reader = new RandomAccessFile(String.format(Locale.ENGLISH, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i), "r");
-                    String line = reader.readLine();
-                    if (line != null) {
-                        totalCpuFreq += Utilities.parseInt(line) / 1000;
-                        freqResolved++;
-                    }
-                    reader.close();
-                } catch (Throwable ignore) {}
-            }
-            int maxCpuFreq = freqResolved == 0 ? -1 : (int) Math.ceil(totalCpuFreq / (float) freqResolved);
+            devicePerformanceClass = measureDevicePerformanceClass();
+        }
+        return devicePerformanceClass;
+    }
 
-            if (androidVersion < 21 || cpuCount <= 2 || memoryClass <= 100 || cpuCount <= 4 && maxCpuFreq != -1 && maxCpuFreq <= 1250 || cpuCount <= 4 && maxCpuFreq <= 1600 && memoryClass <= 128 && androidVersion <= 21 || cpuCount <= 4 && maxCpuFreq <= 1300 && memoryClass <= 128 && androidVersion <= 24) {
-                devicePerformanceClass = PERFORMANCE_CLASS_LOW;
-            } else if (cpuCount < 8 || memoryClass <= 160 || maxCpuFreq != -1 && maxCpuFreq <= 2050 || maxCpuFreq == -1 && cpuCount == 8 && androidVersion <= 23) {
-                devicePerformanceClass = PERFORMANCE_CLASS_AVERAGE;
-            } else {
-                devicePerformanceClass = PERFORMANCE_CLASS_HIGH;
+    public static int measureDevicePerformanceClass() {
+        int androidVersion = Build.VERSION.SDK_INT;
+        int cpuCount = ConnectionsManager.CPU_COUNT;
+        int memoryClass = ((ActivityManager) ApplicationLoader.applicationContext.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryClass();
+
+        if (Build.DEVICE != null && Build.MANUFACTURER != null) {
+            int hash = (Build.MANUFACTURER + " " + Build.DEVICE).toUpperCase().hashCode();
+            for (int i = 0; i < LOW_DEVICES.length; ++i) {
+                if (LOW_DEVICES[i] == hash) {
+                    return PERFORMANCE_CLASS_LOW;
+                }
             }
-            if (BuildVars.LOGS_ENABLED) {
-                FileLog.d("device performance info (cpu_count = " + cpuCount + ", freq = " + maxCpuFreq + ", memoryClass = " + memoryClass + ", android version " + androidVersion + ")");
+            for (int i = 0; i < AVERAGE_DEVICES.length; ++i) {
+                if (AVERAGE_DEVICES[i] == hash) {
+                    return PERFORMANCE_CLASS_AVERAGE;
+                }
+            }
+            for (int i = 0; i < HIGH_DEVICES.length; ++i) {
+                if (HIGH_DEVICES[i] == hash) {
+                    return PERFORMANCE_CLASS_HIGH;
+                }
             }
         }
 
-        return devicePerformanceClass;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && Build.SOC_MODEL != null) {
+            int hash = Build.SOC_MODEL.toUpperCase().hashCode();
+            for (int i = 0; i < LOW_SOC.length; ++i) {
+                if (LOW_SOC[i] == hash) {
+                    return PERFORMANCE_CLASS_LOW;
+                }
+            }
+        }
+
+        int totalCpuFreq = 0;
+        int freqResolved = 0;
+        for (int i = 0; i < cpuCount; i++) {
+            try {
+                RandomAccessFile reader = new RandomAccessFile(String.format(Locale.ENGLISH, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i), "r");
+                String line = reader.readLine();
+                if (line != null) {
+                    totalCpuFreq += Utilities.parseInt(line) / 1000;
+                    freqResolved++;
+                }
+                reader.close();
+            } catch (Throwable ignore) {}
+        }
+        int maxCpuFreq = freqResolved == 0 ? -1 : (int) Math.ceil(totalCpuFreq / (float) freqResolved);
+
+        long ram = -1;
+        try {
+            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+            ((ActivityManager) ApplicationLoader.applicationContext.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryInfo(memoryInfo);
+            ram = memoryInfo.totalMem;
+        } catch (Exception ignore) {}
+
+        int performanceClass;
+        if (
+            androidVersion < 21 ||
+            cpuCount <= 2 ||
+            memoryClass <= 100 ||
+            cpuCount <= 4 && maxCpuFreq != -1 && maxCpuFreq <= 1250 ||
+            cpuCount <= 4 && maxCpuFreq <= 1600 && memoryClass <= 128 && androidVersion <= 21 ||
+            cpuCount <= 4 && maxCpuFreq <= 1300 && memoryClass <= 128 && androidVersion <= 24 ||
+            ram != -1 && ram < 2L * 1024L * 1024L * 1024L
+        ) {
+            performanceClass = PERFORMANCE_CLASS_LOW;
+        } else if (
+            cpuCount < 8 ||
+            memoryClass <= 160 ||
+            maxCpuFreq != -1 && maxCpuFreq <= 2055 ||
+            maxCpuFreq == -1 && cpuCount == 8 && androidVersion <= 23
+        ) {
+            performanceClass = PERFORMANCE_CLASS_AVERAGE;
+        } else {
+            performanceClass = PERFORMANCE_CLASS_HIGH;
+        }
+        if (BuildVars.LOGS_ENABLED) {
+            FileLog.d("device performance info selected_class = " + performanceClass + " (cpu_count = " + cpuCount + ", freq = " + maxCpuFreq + ", memoryClass = " + memoryClass + ", android version " + androidVersion + ", manufacture " + Build.MANUFACTURER + ", screenRefreshRate=" + AndroidUtilities.screenRefreshRate + ")");
+        }
+
+        return performanceClass;
+    }
+
+    public static String performanceClassName(int perfClass) {
+        switch (perfClass) {
+            case PERFORMANCE_CLASS_HIGH: return "HIGH";
+            case PERFORMANCE_CLASS_AVERAGE: return "AVERAGE";
+            case PERFORMANCE_CLASS_LOW: return "LOW";
+            default: return "UNKNOWN";
+        }
     }
 
     public static void setMediaColumnsCount(int count) {
@@ -2338,8 +1713,9 @@ public class SharedConfig {
     public static boolean canBlurChat() {
         return getDevicePerformanceClass() == PERFORMANCE_CLASS_HIGH || NekoConfig.forceBlurInChat.Bool();
     }
+
     public static boolean chatBlurEnabled() {
-        return (canBlurChat() && chatBlur) || NekoConfig.forceBlurInChat.Bool();
+        return (canBlurChat() && LiteMode.isEnabled(LiteMode.FLAG_CHAT_BLUR)) || NekoConfig.forceBlurInChat.Bool();
     }
 
     public static class BackgroundActivityPrefs {
@@ -2352,5 +1728,87 @@ public class SharedConfig {
         public static void setLastCheckedBackgroundActivity(long l) {
             prefs.edit().putLong("last_checked", l).apply();
         }
+
+        public static int getDismissedCount() {
+            return prefs.getInt("dismissed_count", 0);
+        }
+
+        public static void increaseDismissedCount() {
+            prefs.edit().putInt("dismissed_count", getDismissedCount() + 1).apply();
+        }
+    }
+
+    private static Boolean animationsEnabled;
+
+    public static void setAnimationsEnabled(boolean b) {
+        animationsEnabled = b;
+    }
+
+    public static boolean animationsEnabled() {
+        if (animationsEnabled == null) {
+            animationsEnabled = MessagesController.getGlobalMainSettings().getBoolean("view_animations", true);
+        }
+        return animationsEnabled;
+    }
+
+    public static SharedPreferences getPreferences() {
+        return ApplicationLoader.applicationContext.getSharedPreferences("userconfing", Context.MODE_PRIVATE);
+    }
+
+    public static boolean deviceIsLow() {
+        return getDevicePerformanceClass() == PERFORMANCE_CLASS_LOW;
+    }
+
+    public static boolean deviceIsAboveAverage() {
+        return getDevicePerformanceClass() >= PERFORMANCE_CLASS_AVERAGE;
+    }
+
+    public static boolean deviceIsHigh() {
+        return getDevicePerformanceClass() >= PERFORMANCE_CLASS_HIGH;
+    }
+
+    public static boolean deviceIsAverage() {
+        return getDevicePerformanceClass() <= PERFORMANCE_CLASS_AVERAGE;
+    }
+
+    public static void toggleRoundCamera() {
+        bigCameraForRound = !bigCameraForRound;
+        ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE)
+                .edit()
+                .putBoolean("bigCameraForRound", bigCameraForRound)
+                .apply();
+    }
+
+
+    @Deprecated
+    public static int getLegacyDevicePerformanceClass() {
+        if (legacyDevicePerformanceClass == -1) {
+            int androidVersion = Build.VERSION.SDK_INT;
+            int cpuCount = ConnectionsManager.CPU_COUNT;
+            int memoryClass = ((ActivityManager) ApplicationLoader.applicationContext.getSystemService(Context.ACTIVITY_SERVICE)).getMemoryClass();
+            int totalCpuFreq = 0;
+            int freqResolved = 0;
+            for (int i = 0; i < cpuCount; i++) {
+                try {
+                    RandomAccessFile reader = new RandomAccessFile(String.format(Locale.ENGLISH, "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", i), "r");
+                    String line = reader.readLine();
+                    if (line != null) {
+                        totalCpuFreq += Utilities.parseInt(line) / 1000;
+                        freqResolved++;
+                    }
+                    reader.close();
+                } catch (Throwable ignore) {}
+            }
+            int maxCpuFreq = freqResolved == 0 ? -1 : (int) Math.ceil(totalCpuFreq / (float) freqResolved);
+
+            if (androidVersion < 21 || cpuCount <= 2 || memoryClass <= 100 || cpuCount <= 4 && maxCpuFreq != -1 && maxCpuFreq <= 1250 || cpuCount <= 4 && maxCpuFreq <= 1600 && memoryClass <= 128 && androidVersion <= 21 || cpuCount <= 4 && maxCpuFreq <= 1300 && memoryClass <= 128 && androidVersion <= 24) {
+                legacyDevicePerformanceClass = PERFORMANCE_CLASS_LOW;
+            } else if (cpuCount < 8 || memoryClass <= 160 || maxCpuFreq != -1 && maxCpuFreq <= 2050 || maxCpuFreq == -1 && cpuCount == 8 && androidVersion <= 23) {
+                legacyDevicePerformanceClass = PERFORMANCE_CLASS_AVERAGE;
+            } else {
+                legacyDevicePerformanceClass = PERFORMANCE_CLASS_HIGH;
+            }
+        }
+        return legacyDevicePerformanceClass;
     }
 }

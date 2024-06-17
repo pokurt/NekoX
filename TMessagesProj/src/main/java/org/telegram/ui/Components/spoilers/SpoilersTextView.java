@@ -30,10 +30,14 @@ public class SpoilersTextView extends TextView {
     private Paint xRefPaint;
 
     public SpoilersTextView(Context context) {
+        this(context, true);
+    }
+
+    public SpoilersTextView(Context context, boolean revealOnClick) {
         super(context);
 
         clickDetector = new SpoilersClickDetector(this, spoilers, (eff, x, y) -> {
-            if (isSpoilersRevealed) return;
+            if (isSpoilersRevealed || !revealOnClick) return;
 
             eff.setOnRippleEndCallback(()->post(()->{
                 isSpoilersRevealed = true;
@@ -120,6 +124,12 @@ public class SpoilersTextView extends TextView {
             }
             canvas.restore();
         }
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        super.onLayout(changed, left, top, right, bottom);
+        invalidateSpoilers();
     }
 
     private void invalidateSpoilers() {

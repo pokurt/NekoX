@@ -1,34 +1,44 @@
 package org.telegram.ui.Components;
 
 import android.content.Context;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
+
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.INavigationLayout;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
+import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.ProfileActivity;
+import org.telegram.ui.TopicsFragment;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.List;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class BackButtonMenu {
@@ -42,26 +52,33 @@ public class BackButtonMenu {
         int filterId;
     }
 
-    public static ActionBarPopupWindow show(BaseFragment thisFragment, View backButton, long currentDialogId) {
+    public static ActionBarPopupWindow show(BaseFragment thisFragment, View backButton, long currentDialogId, int topicId, Theme.ResourcesProvider resourcesProvider) {
         if (thisFragment == null) {
             return null;
         }
-        final ActionBarLayout parentLayout = thisFragment.getParentLayout();
+        final INavigationLayout parentLayout = thisFragment.getParentLayout();
         final Context context = thisFragment.getParentActivity();
         final View fragmentView = thisFragment.getFragmentView();
         if (parentLayout == null || context == null || fragmentView == null) {
             return null;
         }
-        ArrayList<PulledDialog> dialogs = getStackedHistoryDialogs(thisFragment, currentDialogId);
+        ArrayList<PulledDialog> dialogs;
+        if (topicId != 0) {
+          new ArrayList<>();
+            dialogs = getStackedHistoryForTopic(thisFragment, currentDialogId, topicId);
+        } else {
+            dialogs = getStackedHistoryDialogs(thisFragment, currentDialogId);
+        }
+
         if (dialogs.size() <= 0) {
             return null;
         }
 
-        ActionBarPopupWindow.ActionBarPopupWindowLayout layout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(context);
+        ActionBarPopupWindow.ActionBarPopupWindowLayout layout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(context, resourcesProvider);
         android.graphics.Rect backgroundPaddings = new Rect();
         Drawable shadowDrawable = thisFragment.getParentActivity().getResources().getDrawable(R.drawable.popup_fixed_alert).mutate();
         shadowDrawable.getPadding(backgroundPaddings);
-        layout.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground));
+        layout.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground, resourcesProvider));
 
         AtomicReference<ActionBarPopupWindow> scrimPopupWindowRef = new AtomicReference<>();
 
@@ -73,24 +90,36 @@ public class BackButtonMenu {
             cell.setMinimumWidth(AndroidUtilities.dp(200));
 
             BackupImageView imageView = new BackupImageView(context);
-            imageView.setRoundRadius(AndroidUtilities.dp(32));
+            if (chat == null && user == null) {
+                imageView.setRoundRadius(0);
+            } else {
+                imageView.setRoundRadius(chat != null && chat.forum ? AndroidUtilities.dp(8) : AndroidUtilities.dp(16));
+            }
             cell.addView(imageView, LayoutHelper.createFrameRelatively(32, 32, Gravity.START | Gravity.CENTER_VERTICAL, 13, 0, 0, 0));
 
             TextView titleView = new TextView(context);
             titleView.setLines(1);
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-            titleView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem));
+            titleView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider));
             titleView.setEllipsize(TextUtils.TruncateAt.END);
             cell.addView(titleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL, 59, 0, 12, 0));
 
             AvatarDrawable avatarDrawable = new AvatarDrawable();
-            avatarDrawable.setSmallSize(true);
+            avatarDrawable.setScaleSize(.8f);
+            Drawable thumb = avatarDrawable;
+            boolean addDivider = false;
             if (chat != null) {
                 avatarDrawable.setInfo(chat);
-                imageView.setImage(ImageLocation.getForChat(chat, ImageLocation.TYPE_SMALL), "50_50", avatarDrawable, chat);
+                if (chat.photo != null && chat.photo.strippedBitmap != null) {
+                    thumb = chat.photo.strippedBitmap;
+                }
+                imageView.setImage(ImageLocation.getForChat(chat, ImageLocation.TYPE_SMALL), "50_50", thumb, chat);
                 titleView.setText(chat.title);
             } else if (user != null) {
                 String name;
+                if (user.photo != null && user.photo.strippedBitmap != null) {
+                    thumb = user.photo.strippedBitmap;
+                }
                 if (pDialog.activity == ChatActivity.class && UserObject.isUserSelf(user)) {
                     name = LocaleController.getString("SavedMessages", R.string.SavedMessages);
                     avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_SAVED);
@@ -106,22 +135,29 @@ public class BackButtonMenu {
                 } else {
                     name = UserObject.getUserName(user);
                     avatarDrawable.setInfo(user);
-                    imageView.setImage(ImageLocation.getForUser(user, ImageLocation.TYPE_SMALL), "50_50", avatarDrawable, user);
+                    imageView.setImage(ImageLocation.getForUser(user, ImageLocation.TYPE_SMALL), "50_50", thumb, user);
                 }
                 titleView.setText(name);
+            } else {
+                Drawable drawable = ContextCompat.getDrawable(context, R.drawable.msg_viewchats).mutate();
+                imageView.setImageDrawable(drawable);
+                imageView.setSize(AndroidUtilities.dp(24), AndroidUtilities.dp(24));
+                imageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider), PorterDuff.Mode.MULTIPLY));
+                titleView.setText(LocaleController.getString("AllChats", R.string.AllChats));
+                addDivider = true;
             }
 
-            cell.setBackground(Theme.getSelectorDrawable(Theme.getColor(Theme.key_listSelector), false));
+            cell.setBackground(Theme.getSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider), false));
             cell.setOnClickListener(e2 -> {
                 if (scrimPopupWindowRef.get() != null) {
                     scrimPopupWindowRef.getAndSet(null).dismiss();
                 }
                 if (pDialog.stackIndex >= 0) {
                     Long nextFragmentDialogId = null;
-                    if (parentLayout == null || parentLayout.fragmentsStack == null || pDialog.stackIndex >= parentLayout.fragmentsStack.size()) {
+                    if (parentLayout == null || parentLayout.getFragmentStack() == null || pDialog.stackIndex >= parentLayout.getFragmentStack().size()) {
                         nextFragmentDialogId = null;
                     } else {
-                        BaseFragment nextFragment = parentLayout.fragmentsStack.get(pDialog.stackIndex);
+                        BaseFragment nextFragment = parentLayout.getFragmentStack().get(pDialog.stackIndex);
                         if (nextFragment instanceof ChatActivity) {
                             nextFragmentDialogId = ((ChatActivity) nextFragment).getDialogId();
                         } else if (nextFragment instanceof ProfileActivity) {
@@ -129,18 +165,17 @@ public class BackButtonMenu {
                         }
                     }
                     if (nextFragmentDialogId != null && nextFragmentDialogId != pDialog.dialogId) {
-                        for (int j = parentLayout.fragmentsStack.size() - 2; j > pDialog.stackIndex; --j) {
+                        for (int j = parentLayout.getFragmentStack().size() - 2; j > pDialog.stackIndex; --j) {
                             parentLayout.removeFragmentFromStack(j);
                         }
                     } else {
-                        if (parentLayout != null && parentLayout.fragmentsStack != null) {
-                            for (int j = parentLayout.fragmentsStack.size() - 2; j > pDialog.stackIndex; --j) {
-                                if (j >= 0 && j < parentLayout.fragmentsStack.size()) {
-                                    parentLayout.removeFragmentFromStack(j);
-                                }
+                        if (parentLayout != null && parentLayout.getFragmentStack() != null) {
+                            ArrayList<BaseFragment> fragments = new ArrayList<>(parentLayout.getFragmentStack());
+                            for (int j = fragments.size() - 2; j > pDialog.stackIndex; --j) {
+                                fragments.get(j).removeSelfFromStack();
                             }
-                            if (pDialog.stackIndex < parentLayout.fragmentsStack.size()) {
-                                parentLayout.showFragment(pDialog.stackIndex);
+                            if (pDialog.stackIndex < parentLayout.getFragmentStack().size()) {
+                               // parentLayout.bringToFront(pDialog.stackIndex);
                                 parentLayout.closeLastFragment(true);
                                 return;
                             }
@@ -150,6 +185,12 @@ public class BackButtonMenu {
                 goToPulledDialog(thisFragment, pDialog);
             });
             layout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
+            if (addDivider) {
+                FrameLayout gap = new FrameLayout(context);
+                gap.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuSeparator, resourcesProvider));
+                gap.setTag(R.id.fit_width_tag, 1);
+                layout.addView(gap, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 8));
+            }
         }
 
         ActionBarPopupWindow scrimPopupWindow = new ActionBarPopupWindow(layout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
@@ -175,11 +216,35 @@ public class BackButtonMenu {
         int popupY = (int) (backButton.getBottom() - backgroundPaddings.top - AndroidUtilities.dp(8));
         scrimPopupWindow.showAtLocation(fragmentView, Gravity.LEFT | Gravity.TOP, popupX, popupY);
 
-        try {
-            fragmentView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
-        } catch (Exception ignore) {}
+//        try {
+//            fragmentView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+//        } catch (Exception ignore) {}
 
         return scrimPopupWindow;
+    }
+
+    private static ArrayList<PulledDialog> getStackedHistoryForTopic(BaseFragment thisFragment, long currentDialogId, int topicId) {
+        ArrayList<PulledDialog> dialogs = new ArrayList<>();
+        if (thisFragment.getParentLayout().getFragmentStack().size() > 1 && thisFragment.getParentLayout().getFragmentStack().get(thisFragment.getParentLayout().getFragmentStack().size() - 2) instanceof TopicsFragment) {
+            PulledDialog pulledDialog = new PulledDialog();
+            dialogs.add(pulledDialog);
+            pulledDialog.stackIndex = 0;
+            pulledDialog.activity = DialogsActivity.class;
+
+            pulledDialog = new PulledDialog();
+            dialogs.add(pulledDialog);
+            pulledDialog.stackIndex = thisFragment.getParentLayout().getFragmentStack().size() - 2;
+            pulledDialog.activity = TopicsFragment.class;
+            pulledDialog.chat = MessagesController.getInstance(thisFragment.getCurrentAccount()).getChat(-currentDialogId);
+            return dialogs;
+        } else {
+            PulledDialog pulledDialog = new PulledDialog();
+            dialogs.add(pulledDialog);
+            pulledDialog.stackIndex = -1;
+            pulledDialog.activity = TopicsFragment.class;
+            pulledDialog.chat = MessagesController.getInstance(thisFragment.getCurrentAccount()).getChat(-currentDialogId);
+            return dialogs;
+        }
     }
 
     public static void goToPulledDialog(BaseFragment fragment, PulledDialog dialog) {
@@ -200,6 +265,13 @@ public class BackButtonMenu {
             Bundle bundle = new Bundle();
             bundle.putLong("dialog_id", dialog.dialogId);
             fragment.presentFragment(new ProfileActivity(bundle), true);
+        } if (dialog.activity == TopicsFragment.class) {
+            Bundle bundle = new Bundle();
+            bundle.putLong("chat_id", dialog.chat.id);
+            fragment.presentFragment(new TopicsFragment(bundle), true);
+        } if (dialog.activity == DialogsActivity.class) {
+
+            fragment.presentFragment(new DialogsActivity(null), true);
         }
     }
 
@@ -207,11 +279,11 @@ public class BackButtonMenu {
         ArrayList<PulledDialog> dialogs = new ArrayList<>();
         if (thisFragment == null)
             return dialogs;
-        final ActionBarLayout parentLayout = thisFragment.getParentLayout();
+        final INavigationLayout parentLayout = thisFragment.getParentLayout();
         if (parentLayout == null)
             return dialogs;
-        ArrayList<BaseFragment> fragmentsStack = parentLayout.fragmentsStack;
-        ArrayList<PulledDialog> pulledDialogs = parentLayout.pulledDialogs;
+        List<BaseFragment> fragmentsStack = parentLayout.getFragmentStack();
+        List<PulledDialog> pulledDialogs = parentLayout.getPulledDialogs();
         if (fragmentsStack != null) {
             final int count = fragmentsStack.size();
             for (int i = 0; i < count; ++i) {
@@ -270,7 +342,9 @@ public class BackButtonMenu {
             }
         }
         if (pulledDialogs != null) {
-            for (PulledDialog pulledDialog : pulledDialogs) {
+            int count = pulledDialogs.size();
+            for (int i = count - 1; i >= 0; --i) {
+                PulledDialog pulledDialog = pulledDialogs.get(i);
                 if (pulledDialog.dialogId == ignoreDialogId) {
                     continue;
                 }
@@ -297,15 +371,15 @@ public class BackButtonMenu {
         if (thisFragment == null) {
             return;
         }
-        final ActionBarLayout parentLayout = thisFragment.getParentLayout();
+        INavigationLayout parentLayout = thisFragment.getParentLayout();
         if (parentLayout == null) {
             return;
         }
-        if (parentLayout.pulledDialogs == null) {
-            parentLayout.pulledDialogs = new ArrayList<>();
+        if (parentLayout.getPulledDialogs() == null) {
+            parentLayout.setPulledDialogs(new ArrayList<>());
         }
         boolean alreadyAdded = false;
-        for (PulledDialog d : parentLayout.pulledDialogs) {
+        for (PulledDialog d : parentLayout.getPulledDialogs()) {
             if (d.dialogId == dialogId) {
                 alreadyAdded = true;
                 break;
@@ -321,24 +395,225 @@ public class BackButtonMenu {
             d.folderId = folderId;
             d.chat = chat;
             d.user = user;
-            parentLayout.pulledDialogs.add(d);
+            parentLayout.getPulledDialogs().add(d);
         }
     }
     public static void clearPulledDialogs(BaseFragment thisFragment, int fromIndex) {
         if (thisFragment == null) {
             return;
         }
-        final ActionBarLayout parentLayout = thisFragment.getParentLayout();
+        final INavigationLayout parentLayout = thisFragment.getParentLayout();
         if (parentLayout == null) {
             return;
         }
-        if (parentLayout.pulledDialogs != null) {
-            for (int i = 0; i < parentLayout.pulledDialogs.size(); ++i) {
-                if (parentLayout.pulledDialogs.get(i).stackIndex > fromIndex) {
-                    parentLayout.pulledDialogs.remove(i);
+        if (parentLayout.getPulledDialogs() != null) {
+            for (int i = 0; i < parentLayout.getPulledDialogs().size(); ++i) {
+                if (parentLayout.getPulledDialogs().get(i).stackIndex > fromIndex) {
+                    parentLayout.getPulledDialogs().remove(i);
                     i--;
                 }
             }
+        }
+    }
+
+    // NekoX: History Chats
+
+    public static ActionBarPopupWindow showHistory(BaseFragment thisFragment, View backButton) {
+        if (thisFragment == null) {
+            return null;
+        }
+        final INavigationLayout parentLayout = thisFragment.getParentLayout();
+        final Context context = thisFragment.getParentActivity();
+        final View fragmentView = thisFragment.getFragmentView();
+        if (parentLayout == null || context == null || fragmentView == null) {
+            return null;
+        }
+        List<PulledDialog> dialogs = getRecentDialogs(thisFragment.getCurrentAccount());
+        if (dialogs.size() <= 0) {
+            return null;
+        }
+
+        ActionBarPopupWindow.ActionBarPopupWindowLayout layout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(context, null);
+        android.graphics.Rect backgroundPaddings = new Rect();
+        Drawable shadowDrawable = thisFragment.getParentActivity().getResources().getDrawable(R.drawable.popup_fixed_alert).mutate();
+        shadowDrawable.getPadding(backgroundPaddings);
+        layout.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground));
+
+        AtomicReference<ActionBarPopupWindow> scrimPopupWindowRef = new AtomicReference<>();
+
+        for (PulledDialog pDialog: dialogs) {
+            final TLRPC.Chat chat = pDialog.chat;
+            final TLRPC.User user = pDialog.user;
+            FrameLayout cell = new FrameLayout(context);
+            cell.setMinimumWidth(AndroidUtilities.dp(200));
+
+            BackupImageView imageView = new BackupImageView(context);
+            imageView.setRoundRadius(AndroidUtilities.dp(32));
+            cell.addView(imageView, LayoutHelper.createFrameRelatively(32, 32, Gravity.START | Gravity.CENTER_VERTICAL, 13, 0, 0, 0));
+
+            TextView titleView = new TextView(context);
+            titleView.setLines(1);
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            titleView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem));
+            titleView.setEllipsize(TextUtils.TruncateAt.END);
+            cell.addView(titleView, LayoutHelper.createFrameRelatively(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL, 59, 0, 12, 0));
+
+            AvatarDrawable avatarDrawable = new AvatarDrawable();
+            avatarDrawable.setSmallSize(true);
+            Drawable thumb = avatarDrawable;
+            if (chat != null) {
+                avatarDrawable.setInfo(chat);
+                if (chat.photo != null && chat.photo.strippedBitmap != null) {
+                    thumb = chat.photo.strippedBitmap;
+                }
+                imageView.setImage(ImageLocation.getForChat(chat, ImageLocation.TYPE_SMALL), "50_50", thumb, chat);
+                titleView.setText(chat.title);
+            } else if (user != null) {
+                String name;
+                if (user.photo != null && user.photo.strippedBitmap != null) {
+                    thumb = user.photo.strippedBitmap;
+                }
+                if (pDialog.activity == ChatActivity.class && UserObject.isUserSelf(user)) {
+                    name = LocaleController.getString("SavedMessages", R.string.SavedMessages);
+                    avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_SAVED);
+                    imageView.setImageDrawable(avatarDrawable);
+                } else if (UserObject.isReplyUser(user)) {
+                    name = LocaleController.getString("RepliesTitle", R.string.RepliesTitle);
+                    avatarDrawable.setAvatarType(AvatarDrawable.AVATAR_TYPE_REPLIES);
+                    imageView.setImageDrawable(avatarDrawable);
+                } else if (UserObject.isDeleted(user)) {
+                    name = LocaleController.getString("HiddenName", R.string.HiddenName);
+                    avatarDrawable.setInfo(user);
+                    imageView.setImage(ImageLocation.getForUser(user, ImageLocation.TYPE_SMALL), "50_50", avatarDrawable, user);
+                } else {
+                    name = UserObject.getUserName(user);
+                    avatarDrawable.setInfo(user);
+                    imageView.setImage(ImageLocation.getForUser(user, ImageLocation.TYPE_SMALL), "50_50", thumb, user);
+                }
+                titleView.setText(name);
+            }
+
+            cell.setBackground(Theme.getSelectorDrawable(Theme.getColor(Theme.key_listSelector), false));
+            cell.setOnClickListener(e2 -> {
+                if (scrimPopupWindowRef.get() != null) {
+                    scrimPopupWindowRef.getAndSet(null).dismiss();
+                }
+                if (pDialog.stackIndex >= 0) {
+                    Long nextFragmentDialogId = null;
+                    if (parentLayout == null || parentLayout.getFragmentStack() == null || pDialog.stackIndex >= parentLayout.getFragmentStack().size()) {
+                        nextFragmentDialogId = null;
+                    } else {
+                        BaseFragment nextFragment = parentLayout.getFragmentStack().get(pDialog.stackIndex);
+                        if (nextFragment instanceof ChatActivity) {
+                            nextFragmentDialogId = ((ChatActivity) nextFragment).getDialogId();
+                        } else if (nextFragment instanceof ProfileActivity) {
+                            nextFragmentDialogId = ((ProfileActivity) nextFragment).getDialogId();
+                        }
+                    }
+                    if (nextFragmentDialogId != null && nextFragmentDialogId != pDialog.dialogId) {
+                        for (int j = parentLayout.getFragmentStack().size() - 2; j > pDialog.stackIndex; --j) {
+                            parentLayout.removeFragmentFromStack(j);
+                        }
+                    } else {
+                        if (parentLayout != null && parentLayout.getFragmentStack() != null) {
+                            for (int j = parentLayout.getFragmentStack().size() - 2; j > pDialog.stackIndex; --j) {
+                                if (j >= 0 && j < parentLayout.getFragmentStack().size()) {
+                                    parentLayout.removeFragmentFromStack(j);
+                                }
+                            }
+                            if (pDialog.stackIndex < parentLayout.getFragmentStack().size()) {
+                                parentLayout.bringToFront(pDialog.stackIndex);
+                                parentLayout.closeLastFragment(true);
+                                return;
+                            }
+                        }
+                    }
+                }
+                goToPulledDialogWithoutRemove(thisFragment, pDialog);
+            });
+            layout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
+        }
+
+        ActionBarPopupWindow scrimPopupWindow = new ActionBarPopupWindow(layout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
+        scrimPopupWindowRef.set(scrimPopupWindow);
+        scrimPopupWindow.setPauseNotifications(true);
+        scrimPopupWindow.setDismissAnimationDuration(220);
+        scrimPopupWindow.setOutsideTouchable(true);
+        scrimPopupWindow.setClippingEnabled(true);
+        scrimPopupWindow.setAnimationStyle(R.style.PopupContextAnimation);
+        scrimPopupWindow.setFocusable(true);
+        layout.measure(View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(1000), View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(1000), View.MeasureSpec.AT_MOST));
+        scrimPopupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NOT_NEEDED);
+        scrimPopupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
+        scrimPopupWindow.getContentView().setFocusableInTouchMode(true);
+        layout.setFitItems(true);
+
+        int popupX = AndroidUtilities.dp(8) - backgroundPaddings.left;
+        if (AndroidUtilities.isTablet()) {
+            int[] location = new int[2];
+            fragmentView.getLocationInWindow(location);
+            popupX += location[0];
+        }
+        int popupY = (int) (backButton.getBottom() - backgroundPaddings.top - AndroidUtilities.dp(8));
+        scrimPopupWindow.showAtLocation(fragmentView, Gravity.LEFT | Gravity.TOP, popupX, popupY);
+
+        return scrimPopupWindow;
+    }
+
+    private static LinkedList<PulledDialog> getRecentDialogs(int currentAccount) {
+        LinkedList<PulledDialog> ret = recentDialogs.get(currentAccount);
+        if (ret == null) {
+            ret = new LinkedList<>();
+            recentDialogs.put(currentAccount, ret);
+        }
+        return ret;
+    }
+
+    private static final int maxLastAccessedDialogs = 20;
+    private static final SparseArray<LinkedList<PulledDialog>> recentDialogs = new SparseArray<>();
+
+    public static void addToAccessedDialogs(int currentAccount, TLRPC.Chat chat, TLRPC.User user, long dialogId, int folderId, int filterId) {
+        LinkedList<PulledDialog> recents = getRecentDialogs(currentAccount);
+        for(int i = 0; i < recents.size(); i++) {
+            if (recents.get(i).dialogId == dialogId) {
+                recents.remove(i);
+                break;
+            }
+        }
+        PulledDialog d = new PulledDialog();
+        d.activity = ChatActivity.class;
+        d.stackIndex = 0;
+        d.dialogId = dialogId;
+        d.filterId = filterId;
+        d.folderId = folderId;
+        d.chat = chat;
+        d.user = user;
+        recents.add(0, d);
+        if (recents.size() > maxLastAccessedDialogs)
+            recents.removeLast();
+        for (int i = 1; i < recents.size(); i++) {
+            recents.get(i).stackIndex = i;
+        }
+    }
+
+    private static void goToPulledDialogWithoutRemove(BaseFragment fragment, PulledDialog dialog) {
+        if (dialog == null) {
+            return;
+        }
+        if (dialog.activity == ChatActivity.class) {
+            Bundle bundle = new Bundle();
+            if (dialog.chat != null) {
+                bundle.putLong("chat_id", dialog.chat.id);
+            } else if (dialog.user != null) {
+                bundle.putLong("user_id", dialog.user.id);
+            }
+            bundle.putInt("dialog_folder_id", dialog.folderId);
+            bundle.putInt("dialog_filter_id", dialog.filterId);
+            fragment.presentFragment(new ChatActivity(bundle), false);
+        } else if (dialog.activity == ProfileActivity.class) {
+            Bundle bundle = new Bundle();
+            bundle.putLong("dialog_id", dialog.dialogId);
+            fragment.presentFragment(new ProfileActivity(bundle), false);
         }
     }
 }

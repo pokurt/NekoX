@@ -43,7 +43,9 @@ public class DownloadProgressIcon extends View implements NotificationCenter.Not
         this.currentAccount = currentAccount;
 
         downloadDrawable = new RLottieDrawable(R.raw.download_progress, "download_progress", AndroidUtilities.dp(28), AndroidUtilities.dp(28), true, null);
+        downloadDrawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultIcon), PorterDuff.Mode.MULTIPLY));
         downloadCompleteDrawable = new RLottieDrawable(R.raw.download_finish, "download_finish", AndroidUtilities.dp(28), AndroidUtilities.dp(28), true, null);
+        downloadCompleteDrawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultIcon), PorterDuff.Mode.MULTIPLY));
 
         downloadImageReceiver.setImageBitmap(downloadDrawable);
         downloadCompleteImageReceiver.setImageBitmap(downloadCompleteDrawable);
@@ -133,7 +135,7 @@ public class DownloadProgressIcon extends View implements NotificationCenter.Not
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         detachCurrentListeners();
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.onDownloadingFilesChanged);
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.onDownloadingFilesChanged);
         downloadImageReceiver.onDetachedFromWindow();
         downloadCompleteImageReceiver.onDetachedFromWindow();
     }
@@ -159,8 +161,13 @@ public class DownloadProgressIcon extends View implements NotificationCenter.Not
             }
         }
         if (currentListeners.size() == 0 && (getVisibility() != View.VISIBLE || getAlpha() != 1f)) {
-            progress = 0;
-            currentProgress = 0;
+            if (DownloadController.getInstance(currentAccount).hasUnviewedDownloads()) {
+                progress = 1f;
+                currentProgress = 1f;
+            } else {
+                progress = 0;
+                currentProgress = 0;
+            }
         }
     }
 
